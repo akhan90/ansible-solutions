@@ -1,0 +1,13 @@
+Hostname,Automation_User,Scan_Path,File_With_Hardcoded_Info,Line_Number,Finding_Type,Severity,Hardcoded_Information
+{% for server in report_scan_results %}
+{% if server.hardcoded_info | length > 0 %}
+{% for file_info in server.hardcoded_info %}
+{% for finding in file_info.findings %}
+"{{ server.server_name }}","{{ server.automation_user }}","{{ server.paths_scanned | join('; ') }}","{{ file_info.file }}","{{ finding.line }}","{{ finding.type }}","{{ finding.severity }}","{{ finding.value | replace('"', '""') }}"
+{% endfor %}
+{% endfor %}
+{% else %}
+"{{ server.server_name }}","{{ server.automation_user }}","{{ server.paths_scanned | join('; ') }}","NO_FINDINGS","","","","No hardcoded credentials found"
+{% endfor %}
+{% endfor %}
+

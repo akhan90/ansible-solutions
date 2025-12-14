@@ -1,0 +1,33 @@
+# =============================================================================
+# Report Role - Default Variables
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Required Input Variables (must be provided when calling role)
+# ---------------------------------------------------------------------------
+# report_team_name: Name of the team
+# report_team_email: Team email address
+# report_scan_results: List of server_scan_result objects from scan role
+# report_scan_date: Date of the scan (defaults to current date)
+
+# ---------------------------------------------------------------------------
+# Report Configuration
+# ---------------------------------------------------------------------------
+# Directory where reports will be saved
+report_output_dir: "{{ playbook_dir }}/../reports"
+
+# Report filename format (without extension)
+# Final name: Cred_ScanReport_<TeamName>_<Date>.html/.csv
+report_filename_prefix: "Cred_ScanReport"
+
+# Date format for report filename
+report_date_format: "%Y%m%d"
+
+# ---------------------------------------------------------------------------
+# Output Variables (populated by role execution)
+# ---------------------------------------------------------------------------
+# report_html_path: Full path to generated HTML report
+# report_csv_path: Full path to generated CSV report
+# report_summary: Summary statistics of the report
+# ---------------------------------------------------------------------------
+

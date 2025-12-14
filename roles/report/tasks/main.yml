@@ -1,0 +1,189 @@
+# =============================================================================
+# Report Role - Main Tasks
+# =============================================================================
+# This role generates the final consolidated report for a team
+# after all servers have been scanned.
+#
+# Required Variables:
+#   - report_team_name: Name of the team
+#   - report_team_email: Team email address
+#   - report_scan_results: List of server_scan_result objects from scan role
+#
+# Output:
+#   - HTML Report: Cred_ScanReport_<TeamName>_<Date>.html
+#   - CSV Report: Cred_ScanReport_<TeamName>_<Date>.csv
+# =============================================================================
+
+---
+# ---------------------------------------------------------------------------
+# Step 1: Validate required variables
+# ---------------------------------------------------------------------------
+- name: Validate required variables are defined
+  ansible.builtin.assert:
+    that:
+      - report_team_name is defined
+      - report_team_email is defined
+      - report_scan_results is defined
+    fail_msg: "Required variables not defined: report_team_name, report_team_email, report_scan_results"
+    success_msg: "All required variables are defined for report generation"
+
+# ---------------------------------------------------------------------------
+# Step 2: Set report metadata
+# ---------------------------------------------------------------------------
+- name: Set scan date for report
+  ansible.builtin.set_fact:
+    report_scan_date: "{{ report_scan_date | default(ansible_date_time.date) }}"
+
+- name: Sanitize team name for filename
+  ansible.builtin.set_fact:
+    report_team_name_safe: "{{ report_team_name | replace(' ', '_') | replace('/', '_') | replace('\\', '_') }}"
+
+- name: Set report filenames
+  ansible.builtin.set_fact:
+    report_filename_base: "{{ report_filename_prefix }}_{{ report_team_name_safe }}_{{ ansible_date_time.date | replace('-', '') }}"
+
+- name: Set full report paths
+  ansible.builtin.set_fact:
+    report_html_path: "{{ report_output_dir }}/{{ report_filename_base }}.html"
+    report_csv_path: "{{ report_output_dir }}/{{ report_filename_base }}.csv"
+
+- name: Display report configuration
+  ansible.builtin.debug:
+    msg: |
+      ┌──────────────────────────────────────────────────────────────────────────┐
+      │ GENERATING TEAM REPORT                                                   │
+      ├──────────────────────────────────────────────────────────────────────────┤
+      │ Team: {{ report_team_name }}
+      │ Email: {{ report_team_email }}
+      │ Servers Scanned: {{ report_scan_results | length }}
+      │ Scan Date: {{ report_scan_date }}
+      ├──────────────────────────────────────────────────────────────────────────┤
+      │ HTML Report: {{ report_html_path }}
+      │ CSV Report: {{ report_csv_path }}
+      └──────────────────────────────────────────────────────────────────────────┘
+
+# ---------------------------------------------------------------------------
+# Step 3: Calculate report summary statistics
+# ---------------------------------------------------------------------------
+- name: Calculate total findings across all servers
+  ansible.builtin.set_fact:
+    total_findings: "{{ report_scan_results | map(attribute='total_findings') | map('int') | sum }}"
+
+- name: Calculate total files with findings
+  ansible.builtin.set_fact:
+    total_files_with_findings: "{{ report_scan_results | map(attribute='hardcoded_info') | map('length') | sum }}"
+
+- name: Aggregate severity counts
+  ansible.builtin.set_fact:
+    severity_counts:
+      CRITICAL: "{{ report_scan_results | map(attribute='findings_by_severity.CRITICAL') | map('default', 0) | map('int') | sum }}"
+      HIGH: "{{ report_scan_results | map(attribute='findings_by_severity.HIGH') | map('default', 0) | map('int') | sum }}"
+      MEDIUM: "{{ report_scan_results | map(attribute='findings_by_severity.MEDIUM') | map('default', 0) | map('int') | sum }}"
+      LOW: "{{ report_scan_results | map(attribute='findings_by_severity.LOW') | map('default', 0) | map('int') | sum }}"
+      INFO: "{{ report_scan_results | map(attribute='findings_by_severity.INFO') | map('default', 0) | map('int') | sum }}"
+
+- name: Collect all patterns found across servers
+  ansible.builtin.set_fact:
+    all_patterns_found: "{{ report_scan_results | map(attribute='patterns_found') | flatten | unique | list }}"
+
+- name: Build report summary object
+  ansible.builtin.set_fact:
+    report_summary:
+      total_servers: "{{ report_scan_results | length }}"
+      total_files_scanned: "{{ report_scan_results | map(attribute='file_paths_scanned_count') | map('int') | sum }}"
+      total_files_with_findings: "{{ total_files_with_findings }}"
+      total_findings: "{{ total_findings }}"
+      severity_counts: "{{ severity_counts }}"
+      all_patterns_found: "{{ all_patterns_found }}"
+      servers_with_findings: "{{ report_scan_results | selectattr('total_findings', 'gt', 0) | list | length }}"
+      servers_clean: "{{ report_scan_results | selectattr('total_findings', 'eq', 0) | list | length }}"
+
+- name: Display report summary
+  ansible.builtin.debug:
+    msg: |
+      ╔══════════════════════════════════════════════════════════════════════════╗
+      ║                        REPORT SUMMARY                                    ║
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Total Servers Scanned: {{ report_summary.total_servers }}
+      ║ Total Files Scanned: {{ report_summary.total_files_scanned }}
+      ║ Files with Findings: {{ report_summary.total_files_with_findings }}
+      ║ Total Findings: {{ report_summary.total_findings }}
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Severity Breakdown:
+      ║   CRITICAL: {{ report_summary.severity_counts.CRITICAL }}
+      ║   HIGH: {{ report_summary.severity_counts.HIGH }}
+      ║   MEDIUM: {{ report_summary.severity_counts.MEDIUM }}
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Servers with Findings: {{ report_summary.servers_with_findings }}
+      ║ Clean Servers: {{ report_summary.servers_clean }}
+      ║ Patterns Found: {{ report_summary.all_patterns_found | join(', ') | default('None') }}
+      ╚══════════════════════════════════════════════════════════════════════════╝
+
+# ---------------------------------------------------------------------------
+# Step 4: Ensure output directory exists
+# ---------------------------------------------------------------------------
+- name: Create reports output directory
+  ansible.builtin.file:
+    path: "{{ report_output_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+
+# ---------------------------------------------------------------------------
+# Step 5: Generate HTML Report
+# ---------------------------------------------------------------------------
+- name: Generate HTML report
+  ansible.builtin.template:
+    src: report.html.j2
+    dest: "{{ report_html_path }}"
+    mode: '0644'
+  delegate_to: localhost
+
+- name: Confirm HTML report generated
+  ansible.builtin.debug:
+    msg: "✅ HTML Report generated: {{ report_html_path }}"
+
+# ---------------------------------------------------------------------------
+# Step 6: Generate CSV Report
+# ---------------------------------------------------------------------------
+- name: Generate CSV report
+  ansible.builtin.template:
+    src: report.csv.j2
+    dest: "{{ report_csv_path }}"
+    mode: '0644'
+  delegate_to: localhost
+
+- name: Confirm CSV report generated
+  ansible.builtin.debug:
+    msg: "✅ CSV Report generated: {{ report_csv_path }}"
+
+# ---------------------------------------------------------------------------
+# Step 7: Final Report Status
+# ---------------------------------------------------------------------------
+- name: Display final report status
+  ansible.builtin.debug:
+    msg: |
+      ╔══════════════════════════════════════════════════════════════════════════╗
+      ║                    REPORT GENERATION COMPLETE                            ║
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Team: {{ report_team_name }}
+      ║ Status: {{ 'FINDINGS DETECTED' if report_summary.total_findings | int > 0 else 'ALL CLEAN' }}
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Reports Generated:
+      ║   📄 HTML: {{ report_html_path }}
+      ║   📊 CSV:  {{ report_csv_path }}
+      ╚══════════════════════════════════════════════════════════════════════════╝
+
+# ---------------------------------------------------------------------------
+# Step 8: Set output facts for subsequent use
+# ---------------------------------------------------------------------------
+- name: Set report output facts
+  ansible.builtin.set_fact:
+    team_report_output:
+      team_name: "{{ report_team_name }}"
+      team_email: "{{ report_team_email }}"
+      html_report_path: "{{ report_html_path }}"
+      csv_report_path: "{{ report_csv_path }}"
+      summary: "{{ report_summary }}"
+      generated_at: "{{ ansible_date_time.iso8601 }}"
+

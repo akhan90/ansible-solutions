@@ -1,0 +1,69 @@
+================================================================================
+                    CREDENTIAL SCAN REPORT
+================================================================================
+
+Team: {{ email_team_name }}
+Email: {{ email_to }}
+Scan Date: {{ ansible_date_time.date }}
+Generated: {{ ansible_date_time.iso8601 }}
+
+================================================================================
+                         SCAN SUMMARY
+================================================================================
+
+{% if email_report_summary.total_findings | int > 0 %}
+⚠️  ATTENTION REQUIRED: Hardcoded credentials have been detected!
+{% else %}
+✅ ALL CLEAR: No hardcoded credentials were found.
+{% endif %}
+
+  Servers Scanned:     {{ email_report_summary.total_servers }}
+  Files Scanned:       {{ email_report_summary.total_files_scanned }}
+  Total Findings:      {{ email_report_summary.total_findings }}
+  Files with Issues:   {{ email_report_summary.total_files_with_findings }}
+
+================================================================================
+                      FINDINGS BY SEVERITY
+================================================================================
+
+  CRITICAL:  {{ email_report_summary.severity_counts.CRITICAL | default(0) }}
+  HIGH:      {{ email_report_summary.severity_counts.HIGH | default(0) }}
+  MEDIUM:    {{ email_report_summary.severity_counts.MEDIUM | default(0) }}
+
+{% if email_report_summary.all_patterns_found | length > 0 %}
+================================================================================
+                  TYPES OF HARDCODED INFO FOUND
+================================================================================
+
+{{ email_report_summary.all_patterns_found | join(', ') }}
+
+{% endif %}
+================================================================================
+                        ATTACHED REPORTS
+================================================================================
+
+  📄 HTML Report: {{ email_report_html_path | basename }}
+     - Interactive report with detailed findings
+     - Open in browser for best viewing experience
+
+  📊 CSV Report: {{ email_report_csv_path | basename }}
+     - Data export for tracking and analysis
+     - Can be opened in Excel or imported to databases
+
+================================================================================
+                          NEXT STEPS
+================================================================================
+
+  1. Review the attached HTML report for detailed findings
+  2. Identify and remediate hardcoded credentials
+  3. Use secrets management solutions (Vault, AWS Secrets Manager, etc.)
+  4. Re-run the scan after remediation
+
+================================================================================
+
+This is an automated email from the Credential Scan System.
+For questions, contact your security team.
+
+Ansible Tower Automation
+================================================================================
+

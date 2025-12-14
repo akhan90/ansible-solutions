@@ -1,0 +1,21 @@
+# =============================================================================
+# Scan Role - Variables
+# =============================================================================
+# Role-specific variables
+# =============================================================================
+
+# Credential patterns being checked (for documentation/reporting)
+credential_pattern_types:
+  - password_assignment
+  - password_variable
+  - api_key
+  - secret
+  - token
+  - private_key
+  - rsa_private_key
+  - db_connection
+  - aws_access_key
+  - aws_secret_key
+  - credentials
+  - user_pass_combo
+

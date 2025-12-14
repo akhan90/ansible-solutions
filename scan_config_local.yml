@@ -1,0 +1,99 @@
+# =============================================================================
+# Credential Scan Configuration File - LOCAL TESTING
+# =============================================================================
+# This configuration file is for LOCAL TESTING ONLY.
+# It uses local test_data paths instead of production server paths.
+#
+# To use this config, copy to scan_config.yml or reference directly:
+#   cp scan_config_local.yml scan_config.yml
+# =============================================================================
+
+scan_targets:
+  # -------------------------------------------------------------------------
+  # Application Team - Test Servers (localhost)
+  # -------------------------------------------------------------------------
+  - hostname: app-server-01.example.com
+    automation_user: "{{ lookup('env', 'USER') }}"  # Current user for local test
+    team_name: Application Team
+    team_email: app-team@example.com
+    scan_paths:
+      - "{{ playbook_dir }}/../test_data/app_config"
+      - "{{ playbook_dir }}/../test_data/app_scripts"
+
+  - hostname: app-server-02.example.com
+    automation_user: "{{ lookup('env', 'USER') }}"
+    team_name: Application Team
+    team_email: app-team@example.com
+    scan_paths:
+      - "{{ playbook_dir }}/../test_data/app_config"
+
+  # -------------------------------------------------------------------------
+  # DevOps Team - Test Servers (localhost)
+  # -------------------------------------------------------------------------
+  - hostname: infra-server-01.example.com
+    automation_user: "{{ lookup('env', 'USER') }}"
+    team_name: DevOps Team
+    team_email: devops-team@example.com
+    scan_paths:
+      - "{{ playbook_dir }}/../test_data/devops_scripts"
+
+  - hostname: infra-server-02.example.com
+    automation_user: "{{ lookup('env', 'USER') }}"
+    team_name: DevOps Team
+    team_email: devops-team@example.com
+    scan_paths:
+      - "{{ playbook_dir }}/../test_data/devops_scripts"
+
+  # -------------------------------------------------------------------------
+  # Database Team - Test Server (localhost)
+  # -------------------------------------------------------------------------
+  - hostname: db-server-01.example.com
+    automation_user: "{{ lookup('env', 'USER') }}"
+    team_name: Database Team
+    team_email: dba-team@example.com
+    scan_paths:
+      - "{{ playbook_dir }}/../test_data/app_config"
+
+  # -------------------------------------------------------------------------
+  # Security Team - Test Server (localhost)
+  # -------------------------------------------------------------------------
+  - hostname: security-server-01.example.com
+    automation_user: "{{ lookup('env', 'USER') }}"
+    team_name: Security Team
+    team_email: security-team@example.com
+    scan_paths:
+      - "{{ playbook_dir }}/../test_data"
+
+# =============================================================================
+# Global Settings
+# =============================================================================
+global_settings:
+  # File extensions to scan
+  file_extensions:
+    - "*.py"
+    - "*.sh"
+    - "*.yml"
+    - "*.yaml"
+    - "*.json"
+    - "*.xml"
+    - "*.properties"
+    - "*.conf"
+    - "*.config"
+    - "*.ini"
+    - "*.env"
+  
+  # Patterns to exclude from scanning
+  exclude_patterns:
+    - "*.log"
+    - "*.bak"
+    - "*.tmp"
+    - "__pycache__"
+    - ".git"
+    - "node_modules"
+  
+  # Maximum file size to scan (in KB)
+  max_file_size_kb: 1024
+  
+  # Enable/disable recursive directory scanning
+  recursive_scan: true
+

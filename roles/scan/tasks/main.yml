@@ -1,0 +1,250 @@
+# =============================================================================
+# Scan Role - Main Tasks
+# =============================================================================
+# This role executes the credential scan on a target host
+# 
+# Required Variables:
+#   - scan_hostname: Target hostname
+#   - scan_automation_user: User to run the scan as (become_user)
+#   - scan_paths: List of directory paths to scan
+#
+# Optional Variables (from scan_config.yml global_settings):
+#   - scan_global_settings: Global settings from scan_config.yml
+#     - file_extensions: List of file extensions to scan
+#     - exclude_patterns: List of patterns to exclude
+#     - max_file_size_kb: Maximum file size to scan
+#     - recursive_scan: Enable/disable recursive scanning
+#
+# Output:
+#   - server_scan_result: Structured scan results for reporting
+# =============================================================================
+
+---
+# ---------------------------------------------------------------------------
+# Step 1: Validate required variables
+# ---------------------------------------------------------------------------
+- name: Validate required variables are defined
+  ansible.builtin.assert:
+    that:
+      - scan_hostname is defined
+      - scan_automation_user is defined
+      - scan_paths is defined
+      - scan_paths | length > 0
+    fail_msg: "Required variables not defined: scan_hostname, scan_automation_user, scan_paths"
+    success_msg: "All required variables are defined"
+
+- name: Display scan parameters
+  ansible.builtin.debug:
+    msg: |
+      ┌──────────────────────────────────────────────────────────────────────────┐
+      │ CREDENTIAL SCAN STARTING                                                 │
+      ├──────────────────────────────────────────────────────────────────────────┤
+      │ Server: {{ scan_hostname }}
+      │ Automation User: {{ scan_automation_user }}
+      │ Paths to Scan: {{ scan_paths | join(', ') }}
+      │ Config Provided: {{ 'Yes' if scan_global_settings is defined else 'No (using defaults)' }}
+      └──────────────────────────────────────────────────────────────────────────┘
+
+# ---------------------------------------------------------------------------
+# Step 2: Deploy the scan script to target host
+# ---------------------------------------------------------------------------
+- name: Copy credential scan script to target host
+  ansible.builtin.copy:
+    src: creds_scan.py
+    dest: "{{ scan_script_remote_path }}"
+    mode: '0755'
+    owner: "{{ scan_automation_user }}"
+
+- name: Verify script is deployed
+  ansible.builtin.stat:
+    path: "{{ scan_script_remote_path }}"
+  register: script_stat
+
+- name: Fail if script not deployed
+  ansible.builtin.fail:
+    msg: "Failed to deploy scan script to {{ scan_script_remote_path }}"
+  when: not script_stat.stat.exists
+
+# ---------------------------------------------------------------------------
+# Step 3: Deploy scan configuration (from scan_config.yml global_settings)
+# ---------------------------------------------------------------------------
+- name: Create scan configuration JSON on target
+  ansible.builtin.copy:
+    content: "{{ scan_global_settings | to_nice_json }}"
+    dest: "{{ scan_config_remote_path }}"
+    mode: '0644'
+    owner: "{{ scan_automation_user }}"
+  when: scan_global_settings is defined
+
+- name: Display scan configuration being used
+  ansible.builtin.debug:
+    msg: |
+      Scan Configuration:
+        File Extensions: {{ scan_global_settings.file_extensions | default(['Using defaults']) | join(', ') }}
+        Exclude Patterns: {{ scan_global_settings.exclude_patterns | default(['Using defaults']) | join(', ') }}
+        Max File Size: {{ scan_global_settings.max_file_size_kb | default('1024') }} KB
+        Recursive Scan: {{ scan_global_settings.recursive_scan | default(true) }}
+  when: scan_global_settings is defined
+
+# ---------------------------------------------------------------------------
+# Step 4: Check which scan paths exist on the target
+# ---------------------------------------------------------------------------
+- name: Check if scan paths exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ scan_paths }}"
+  register: path_checks
+  become: true
+  become_user: "{{ scan_automation_user }}"
+
+- name: Build list of existing paths
+  ansible.builtin.set_fact:
+    existing_scan_paths: "{{ path_checks.results | selectattr('stat.exists', 'equalto', true) | map(attribute='item') | list }}"
+    missing_scan_paths: "{{ path_checks.results | selectattr('stat.exists', 'equalto', false) | map(attribute='item') | list }}"
+
+- name: Display path validation results
+  ansible.builtin.debug:
+    msg: |
+      Existing paths (will scan): {{ existing_scan_paths | join(', ') | default('None') }}
+      Missing paths (will skip): {{ missing_scan_paths | join(', ') | default('None') }}
+
+# ---------------------------------------------------------------------------
+# Step 5: Execute the credential scan
+# ---------------------------------------------------------------------------
+- name: Build scan command with config
+  ansible.builtin.set_fact:
+    scan_command: >-
+      python3 {{ scan_script_remote_path }}
+      --paths {{ existing_scan_paths | join(' ') }}
+      --output {{ scan_results_remote_path }}
+      {% if scan_global_settings is defined %}--config {{ scan_config_remote_path }}{% endif %}
+
+- name: Display scan command
+  ansible.builtin.debug:
+    msg: "Executing: {{ scan_command }}"
+    verbosity: 1
+
+- name: Execute credential scan
+  ansible.builtin.command:
+    cmd: "{{ scan_command }}"
+  become: true
+  become_user: "{{ scan_automation_user }}"
+  register: scan_execution
+  failed_when: false  # Don't fail on findings (exit code 1)
+  changed_when: false
+  when: existing_scan_paths | length > 0
+
+- name: Set empty results if no paths to scan
+  ansible.builtin.set_fact:
+    scan_results_json:
+      scan_timestamp: "{{ ansible_date_time.iso8601 }}"
+      scan_config:
+        file_extensions: "{{ scan_global_settings.file_extensions | default([]) }}"
+        exclude_patterns: "{{ scan_global_settings.exclude_patterns | default([]) }}"
+        max_file_size_kb: "{{ scan_global_settings.max_file_size_kb | default(1024) }}"
+        recursive_scan: "{{ scan_global_settings.recursive_scan | default(true) }}"
+      paths_scanned: []
+      scanned_files: []
+      scanned_files_count: 0
+      patterns_checked: []
+      patterns_found: []
+      total_findings: 0
+      findings_by_severity: {}
+      hardcoded_info: []
+      path_results: []
+  when: existing_scan_paths | length == 0
+
+# ---------------------------------------------------------------------------
+# Step 6: Fetch and parse scan results
+# ---------------------------------------------------------------------------
+- name: Read scan results from remote host
+  ansible.builtin.slurp:
+    src: "{{ scan_results_remote_path }}"
+  register: scan_results_raw
+  become: true
+  become_user: "{{ scan_automation_user }}"
+  when: existing_scan_paths | length > 0
+
+- name: Parse scan results JSON
+  ansible.builtin.set_fact:
+    scan_results_json: "{{ scan_results_raw.content | b64decode | from_json }}"
+  when: existing_scan_paths | length > 0
+
+# ---------------------------------------------------------------------------
+# Step 7: Build structured result for reporting
+# ---------------------------------------------------------------------------
+- name: Build server scan result for reporting
+  ansible.builtin.set_fact:
+    server_scan_result:
+      server_name: "{{ scan_hostname }}"
+      automation_user: "{{ scan_automation_user }}"
+      scan_timestamp: "{{ scan_results_json.scan_timestamp }}"
+      scan_config: "{{ scan_results_json.scan_config | default({}) }}"
+      patterns_checked: "{{ scan_results_json.patterns_checked }}"
+      patterns_found: "{{ scan_results_json.patterns_found }}"
+      file_paths_scanned: "{{ scan_results_json.scanned_files }}"
+      file_paths_scanned_count: "{{ scan_results_json.scanned_files_count }}"
+      paths_requested: "{{ scan_paths }}"
+      paths_scanned: "{{ existing_scan_paths }}"
+      paths_missing: "{{ missing_scan_paths }}"
+      total_findings: "{{ scan_results_json.total_findings }}"
+      findings_by_severity: "{{ scan_results_json.findings_by_severity }}"
+      hardcoded_info: "{{ scan_results_json.hardcoded_info }}"
+      scan_status: "{{ 'findings_detected' if scan_results_json.total_findings | int > 0 else 'clean' }}"
+
+- name: Display scan summary
+  ansible.builtin.debug:
+    msg: |
+      ╔══════════════════════════════════════════════════════════════════════════╗
+      ║                        SCAN COMPLETED                                    ║
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Server: {{ server_scan_result.server_name }}
+      ║ Status: {{ server_scan_result.scan_status | upper }}
+      ║ Files Scanned: {{ server_scan_result.file_paths_scanned_count }}
+      ║ Total Findings: {{ server_scan_result.total_findings }}
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Findings by Severity:
+      ║   CRITICAL: {{ server_scan_result.findings_by_severity.CRITICAL | default(0) }}
+      ║   HIGH: {{ server_scan_result.findings_by_severity.HIGH | default(0) }}
+      ║   MEDIUM: {{ server_scan_result.findings_by_severity.MEDIUM | default(0) }}
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Patterns Found: {{ server_scan_result.patterns_found | join(', ') | default('None') }}
+      ╚══════════════════════════════════════════════════════════════════════════╝
+
+# ---------------------------------------------------------------------------
+# Step 8: Display hardcoded findings (if any)
+# ---------------------------------------------------------------------------
+- name: Display hardcoded credential findings
+  ansible.builtin.debug:
+    msg: |
+      ⚠️  HARDCODED CREDENTIAL FOUND
+      File: {{ item.file }}
+      Findings:
+      {% for finding in item.findings %}
+        - Line {{ finding.line }}: [{{ finding.severity }}] {{ finding.type }}
+          Value: {{ finding.value[:100] }}...
+      {% endfor %}
+  loop: "{{ server_scan_result.hardcoded_info }}"
+  loop_control:
+    label: "{{ item.file }}"
+  when: server_scan_result.hardcoded_info | length > 0
+
+# ---------------------------------------------------------------------------
+# Step 9: Cleanup remote files
+# ---------------------------------------------------------------------------
+- name: Remove scan script from target
+  ansible.builtin.file:
+    path: "{{ scan_script_remote_path }}"
+    state: absent
+
+- name: Remove results file from target
+  ansible.builtin.file:
+    path: "{{ scan_results_remote_path }}"
+    state: absent
+  when: existing_scan_paths | length > 0
+
+- name: Remove config file from target
+  ansible.builtin.file:
+    path: "{{ scan_config_remote_path }}"
+    state: absent
+  when: scan_global_settings is defined

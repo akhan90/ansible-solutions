@@ -1,0 +1,29 @@
+# =============================================================================
+# Host Map Role - Default Variables
+# =============================================================================
+
+# Path to the scan configuration file (relative to playbook or absolute)
+scan_config_file: "{{ playbook_dir }}/../scan_config.yml"
+
+# ---------------------------------------------------------------------------
+# Output Variables (populated by role execution)
+# ---------------------------------------------------------------------------
+# team_mappings: List of teams with their hosts
+#   - team_name: "Application Team"
+#     team_email: "app-team@example.com"
+#     configured_hosts: [full host config objects]
+#     available_hosts: [hosts present in inventory]
+#     available_hostnames: [list of hostnames in inventory]
+#     missing_hosts: [configured but not in inventory]
+#     host_count: number of available hosts
+#
+# unconfigured_inventory_hosts: Inventory hosts not in scan_config.yml
+#
+# host_config: Per-host configuration (set on each host)
+#   - hostname
+#   - automation_user
+#   - team_name
+#   - team_email
+#   - scan_paths
+#   - is_configured: true/false
+# ---------------------------------------------------------------------------

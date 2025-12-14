@@ -1,0 +1,158 @@
+# =============================================================================
+# Credential Scan - Main Entry Point Playbook
+# =============================================================================
+# This is the single entry point for all credential scan operations.
+# It automatically detects which execution mode to use based on variables.
+#
+# EXECUTION MODES:
+# ================
+#
+# Mode 1: Single Team Scan
+#   Variables:
+#     - execute_for_team: true
+#     - team_name: "Team Name"
+#
+# Mode 2: All Teams Scan
+#   Variables:
+#     - scan_all_teams: true
+#
+# OPTIONAL VARIABLES:
+# ===================
+#   - smtp_host: SMTP server for email
+#   - smtp_port: SMTP port (default: 25)
+#   - smtp_username: SMTP auth username
+#   - smtp_password: SMTP auth password
+#   - smtp_use_tls: Enable TLS (default: false)
+#
+# EXAMPLES:
+# =========
+#
+# Single team:
+#   ansible-playbook site.yml -e "execute_for_team=true team_name='Application Team'"
+#
+# All teams:
+#   ansible-playbook site.yml -e "scan_all_teams=true"
+#
+# With SMTP:
+#   ansible-playbook site.yml -e "scan_all_teams=true smtp_host=smtp.company.com"
+#
+# =============================================================================
+
+---
+- name: "Credential Scan - Entry Point"
+  hosts: localhost
+  gather_facts: true
+  connection: local
+
+  vars:
+    scan_config_file: "{{ playbook_dir }}/../scan_config.yml"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Display Welcome Banner
+    # -------------------------------------------------------------------------
+    - name: Display welcome banner
+      ansible.builtin.debug:
+        msg: |
+          ╔══════════════════════════════════════════════════════════════════════════╗
+          ║                                                                          ║
+          ║   ██████╗██████╗ ███████╗██████╗     ███████╗ ██████╗ █████╗ ███╗   ██╗  ║
+          ║  ██╔════╝██╔══██╗██╔════╝██╔══██╗    ██╔════╝██╔════╝██╔══██╗████╗  ██║  ║
+          ║  ██║     ██████╔╝█████╗  ██║  ██║    ███████╗██║     ███████║██╔██╗ ██║  ║
+          ║  ██║     ██╔══██╗██╔══╝  ██║  ██║    ╚════██║██║     ██╔══██║██║╚██╗██║  ║
+          ║  ╚██████╗██║  ██║███████╗██████╔╝    ███████║╚██████╗██║  ██║██║ ╚████║  ║
+          ║   ╚═════╝╚═╝  ╚═╝╚══════╝╚═════╝     ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝  ║
+          ║                                                                          ║
+          ║              CREDENTIAL SCAN AUTOMATION SYSTEM                           ║
+          ║                                                                          ║
+          ╚══════════════════════════════════════════════════════════════════════════╝
+          
+          Timestamp: {{ ansible_date_time.iso8601 }}
+
+    # -------------------------------------------------------------------------
+    # Detect Execution Mode
+    # -------------------------------------------------------------------------
+    - name: Detect execution mode
+      ansible.builtin.set_fact:
+        mode_single_team: "{{ (execute_for_team is defined and execute_for_team | bool and team_name is defined and team_name | length > 0) }}"
+        mode_all_teams: "{{ (scan_all_teams is defined and scan_all_teams | bool) }}"
+
+    - name: Validate at least one mode is selected
+      ansible.builtin.assert:
+        that:
+          - mode_single_team | bool or mode_all_teams | bool
+        fail_msg: |
+          ╔══════════════════════════════════════════════════════════════════════════╗
+          ║                           ERROR                                          ║
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ No execution mode specified!                                             ║
+          ║                                                                          ║
+          ║ Please set one of the following:                                         ║
+          ║                                                                          ║
+          ║ For SINGLE TEAM scan:                                                    ║
+          ║   -e "execute_for_team=true team_name='Your Team Name'"                  ║
+          ║                                                                          ║
+          ║ For ALL TEAMS scan:                                                      ║
+          ║   -e "scan_all_teams=true"                                               ║
+          ╚══════════════════════════════════════════════════════════════════════════╝
+        success_msg: "Execution mode detected"
+
+    - name: Validate only one mode is selected
+      ansible.builtin.assert:
+        that:
+          - not (mode_single_team | bool and mode_all_teams | bool)
+        fail_msg: |
+          ╔══════════════════════════════════════════════════════════════════════════╗
+          ║                           ERROR                                          ║
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ Multiple execution modes specified!                                      ║
+          ║                                                                          ║
+          ║ You cannot set both:                                                     ║
+          ║   - execute_for_team: true with team_name                                ║
+          ║   - scan_all_teams: true                                                 ║
+          ║                                                                          ║
+          ║ Please choose only one mode.                                             ║
+          ╚══════════════════════════════════════════════════════════════════════════╝
+        success_msg: "Single execution mode confirmed"
+
+    # -------------------------------------------------------------------------
+    # Display Selected Mode
+    # -------------------------------------------------------------------------
+    - name: Display selected execution mode
+      ansible.builtin.debug:
+        msg: |
+          ┌──────────────────────────────────────────────────────────────────────────┐
+          │ EXECUTION MODE SELECTED                                                  │
+          ├──────────────────────────────────────────────────────────────────────────┤
+          {% if mode_single_team | bool %}
+          │ Mode: SINGLE TEAM SCAN                                                   │
+          │ Team: {{ team_name }}
+          {% else %}
+          │ Mode: ALL TEAMS SCAN                                                     │
+          {% endif %}
+          ├──────────────────────────────────────────────────────────────────────────┤
+          │ SMTP Configured: {{ 'Yes (' + smtp_host + ')' if smtp_host is defined else 'No (will use mailx)' }}
+          └──────────────────────────────────────────────────────────────────────────┘
+
+    # -------------------------------------------------------------------------
+    # Set execution mode fact for included playbooks
+    # -------------------------------------------------------------------------
+    - name: Set execution mode facts
+      ansible.builtin.set_fact:
+        execution_mode: "{{ 'single_team' if mode_single_team | bool else 'all_teams' }}"
+        cacheable: true
+
+# =============================================================================
+# Route to Single Team Execution
+# =============================================================================
+- name: "Route: Single Team Execution"
+  ansible.builtin.import_playbook: execute_for_team.yml
+  when: hostvars['localhost']['mode_single_team'] | default(false) | bool
+
+# =============================================================================
+# Route: All Teams Execution
+# =============================================================================
+- name: "Route: All Teams Execution"
+  ansible.builtin.import_playbook: execute_all_teams.yml
+  when: hostvars['localhost']['mode_all_teams'] | default(false) | bool
+

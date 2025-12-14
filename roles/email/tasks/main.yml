@@ -1,0 +1,252 @@
+# =============================================================================
+# Email Role - Main Tasks
+# =============================================================================
+# This role sends the credential scan report via email.
+# - If SMTP configuration is provided, uses SMTP (Ansible mail module)
+# - If no SMTP, falls back to mailx command
+#
+# Required Variables:
+#   - email_to: Recipient email address
+#   - email_team_name: Team name for subject
+#   - email_report_html_path: Path to HTML report
+#   - email_report_csv_path: Path to CSV report
+#   - email_report_summary: Report summary from report role
+#
+# Optional Variables:
+#   - smtp_host, smtp_port, smtp_username, smtp_password (for SMTP)
+# =============================================================================
+
+---
+# ---------------------------------------------------------------------------
+# Step 1: Validate required variables
+# ---------------------------------------------------------------------------
+- name: Validate required email variables
+  ansible.builtin.assert:
+    that:
+      - email_to is defined
+      - email_team_name is defined
+      - email_report_html_path is defined
+      - email_report_csv_path is defined
+      - email_report_summary is defined
+    fail_msg: "Required email variables not defined"
+    success_msg: "All required email variables are defined"
+
+# ---------------------------------------------------------------------------
+# Step 2: Verify report files exist
+# ---------------------------------------------------------------------------
+- name: Check HTML report exists
+  ansible.builtin.stat:
+    path: "{{ email_report_html_path }}"
+  register: html_report_stat
+  delegate_to: localhost
+
+- name: Check CSV report exists
+  ansible.builtin.stat:
+    path: "{{ email_report_csv_path }}"
+  register: csv_report_stat
+  delegate_to: localhost
+
+- name: Fail if reports don't exist
+  ansible.builtin.fail:
+    msg: "Report files not found. HTML: {{ email_report_html_path }}, CSV: {{ email_report_csv_path }}"
+  when: not html_report_stat.stat.exists or not csv_report_stat.stat.exists
+
+# ---------------------------------------------------------------------------
+# Step 3: Determine email method (SMTP or mailx)
+# ---------------------------------------------------------------------------
+- name: Check if SMTP configuration is provided
+  ansible.builtin.set_fact:
+    use_smtp: "{{ smtp_host is defined and smtp_host | length > 0 }}"
+
+- name: Display email method
+  ansible.builtin.debug:
+    msg: |
+      ┌──────────────────────────────────────────────────────────────────────────┐
+      │ EMAIL CONFIGURATION                                                      │
+      ├──────────────────────────────────────────────────────────────────────────┤
+      │ Method: {{ 'SMTP' if use_smtp else 'mailx' }}
+      │ To: {{ email_to }}
+      │ From: {{ email_from }}
+      │ Team: {{ email_team_name }}
+      {% if use_smtp %}
+      │ SMTP Host: {{ smtp_host }}
+      │ SMTP Port: {{ smtp_port }}
+      {% endif %}
+      └──────────────────────────────────────────────────────────────────────────┘
+
+# ---------------------------------------------------------------------------
+# Step 4: Build email subject
+# ---------------------------------------------------------------------------
+- name: Set email subject
+  ansible.builtin.set_fact:
+    email_subject: >-
+      {{ email_subject_prefix }} {{ email_team_name }} - 
+      {% if email_report_summary.total_findings | int > 0 %}
+      ⚠️ {{ email_report_summary.total_findings }} Findings Detected
+      {% else %}
+      ✅ All Clear
+      {% endif %}
+      - {{ ansible_date_time.date }}
+
+# ---------------------------------------------------------------------------
+# Step 5: Generate email body from template
+# ---------------------------------------------------------------------------
+- name: Generate HTML email body
+  ansible.builtin.template:
+    src: email_body.html.j2
+    dest: "/tmp/email_body_{{ email_team_name | replace(' ', '_') }}.html"
+  delegate_to: localhost
+  register: html_body_generated
+
+- name: Generate text email body
+  ansible.builtin.template:
+    src: email_body.txt.j2
+    dest: "/tmp/email_body_{{ email_team_name | replace(' ', '_') }}.txt"
+  delegate_to: localhost
+  register: text_body_generated
+
+# ---------------------------------------------------------------------------
+# Step 6A: Send email via SMTP (if configured)
+# ---------------------------------------------------------------------------
+- name: Send email via SMTP
+  when: use_smtp | bool
+  block:
+    - name: Send email using Ansible mail module
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_username | default(omit) }}"
+        password: "{{ smtp_password | default(omit) }}"
+        from: "{{ email_from }}"
+        to: "{{ email_to }}"
+        cc: "{{ email_cc | default(omit) }}"
+        subject: "{{ email_subject }}"
+        subtype: html
+        body: "{{ lookup('file', '/tmp/email_body_' + email_team_name | replace(' ', '_') + '.html') }}"
+        attach:
+          - "{{ email_report_html_path }}"
+          - "{{ email_report_csv_path }}"
+        secure: "{{ 'starttls' if smtp_use_tls else ('always' if smtp_use_ssl else 'try') }}"
+      delegate_to: localhost
+      register: smtp_result
+
+    - name: Set SMTP email status
+      ansible.builtin.set_fact:
+        email_sent: true
+        email_method: "smtp"
+        email_status: "Email sent successfully via SMTP to {{ email_to }}"
+
+# ---------------------------------------------------------------------------
+# Step 6B: Send email via mailx (fallback)
+# ---------------------------------------------------------------------------
+- name: Send email via mailx
+  when: not (use_smtp | bool)
+  block:
+    - name: Check if mailx is available
+      ansible.builtin.command:
+        cmd: which mailx
+      register: mailx_check
+      failed_when: false
+      changed_when: false
+      delegate_to: localhost
+
+    - name: Check if mail is available (alternative)
+      ansible.builtin.command:
+        cmd: which mail
+      register: mail_check
+      failed_when: false
+      changed_when: false
+      delegate_to: localhost
+      when: mailx_check.rc != 0
+
+    - name: Set mail command path
+      ansible.builtin.set_fact:
+        mail_cmd: "{{ mailx_check.stdout if mailx_check.rc == 0 else (mail_check.stdout if mail_check.rc == 0 else '/usr/bin/mailx') }}"
+
+    - name: Send email with attachments using mailx
+      ansible.builtin.shell: |
+        (
+          cat /tmp/email_body_{{ email_team_name | replace(' ', '_') }}.txt
+          echo ""
+          echo "---"
+          echo "Reports attached: {{ email_report_html_path | basename }}, {{ email_report_csv_path | basename }}"
+        ) | {{ mail_cmd }} \
+          -s "{{ email_subject }}" \
+          -r "{{ email_from }}" \
+          -a "{{ email_report_html_path }}" \
+          -a "{{ email_report_csv_path }}" \
+          {{ mailx_options }} \
+          "{{ email_to }}"
+      delegate_to: localhost
+      register: mailx_result
+      failed_when: false
+
+    - name: Try alternative mailx syntax if first attempt failed
+      ansible.builtin.shell: |
+        cat /tmp/email_body_{{ email_team_name | replace(' ', '_') }}.txt | {{ mail_cmd }} \
+          -s "{{ email_subject }}" \
+          -S from="{{ email_from }}" \
+          -A "{{ email_report_html_path }}" \
+          -A "{{ email_report_csv_path }}" \
+          "{{ email_to }}"
+      delegate_to: localhost
+      register: mailx_result_alt
+      when: mailx_result.rc != 0
+      failed_when: false
+
+    - name: Set mailx email status (success)
+      ansible.builtin.set_fact:
+        email_sent: true
+        email_method: "mailx"
+        email_status: "Email sent successfully via mailx to {{ email_to }}"
+      when: mailx_result.rc == 0 or (mailx_result_alt is defined and mailx_result_alt.rc == 0)
+
+    - name: Set mailx email status (failure)
+      ansible.builtin.set_fact:
+        email_sent: false
+        email_method: "mailx"
+        email_status: "Failed to send email via mailx: {{ mailx_result.stderr | default('Unknown error') }}"
+      when: mailx_result.rc != 0 and (mailx_result_alt is not defined or mailx_result_alt.rc != 0)
+
+# ---------------------------------------------------------------------------
+# Step 7: Cleanup temporary files
+# ---------------------------------------------------------------------------
+- name: Cleanup temporary email body files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/email_body_{{ email_team_name | replace(' ', '_') }}.html"
+    - "/tmp/email_body_{{ email_team_name | replace(' ', '_') }}.txt"
+  delegate_to: localhost
+
+# ---------------------------------------------------------------------------
+# Step 8: Display email status
+# ---------------------------------------------------------------------------
+- name: Display email send status
+  ansible.builtin.debug:
+    msg: |
+      ╔══════════════════════════════════════════════════════════════════════════╗
+      ║                        EMAIL STATUS                                      ║
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Sent: {{ '✅ YES' if email_sent else '❌ NO' }}
+      ║ Method: {{ email_method | upper }}
+      ║ To: {{ email_to }}
+      ║ Subject: {{ email_subject }}
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Status: {{ email_status }}
+      ╚══════════════════════════════════════════════════════════════════════════╝
+
+# ---------------------------------------------------------------------------
+# Step 9: Set output facts
+# ---------------------------------------------------------------------------
+- name: Set email output facts
+  ansible.builtin.set_fact:
+    email_result:
+      sent: "{{ email_sent }}"
+      method: "{{ email_method }}"
+      to: "{{ email_to }}"
+      subject: "{{ email_subject }}"
+      status: "{{ email_status }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+

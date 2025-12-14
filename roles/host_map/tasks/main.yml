@@ -1,0 +1,190 @@
+# =============================================================================
+# Host Map Role - Main Tasks (Team-Based Mapping)
+# =============================================================================
+# This role maps inventory hosts against scan_config.yml grouped by TEAM
+# - Groups all hosts by team_name
+# - For each team, identifies which hosts are available in inventory
+# - Creates team_mappings structure for sequential team processing
+# =============================================================================
+
+---
+# ---------------------------------------------------------------------------
+# Step 1: Load scan configuration file
+# ---------------------------------------------------------------------------
+- name: Load scan configuration file
+  ansible.builtin.include_vars:
+    file: "{{ scan_config_file }}"
+    name: scan_config
+  delegate_to: localhost
+  run_once: true
+
+- name: Display loaded scan targets count
+  ansible.builtin.debug:
+    msg: "Loaded {{ scan_config.scan_targets | length }} scan targets from configuration"
+  delegate_to: localhost
+  run_once: true
+
+# ---------------------------------------------------------------------------
+# Step 2: Get unique teams from configuration
+# ---------------------------------------------------------------------------
+- name: Extract unique team names
+  ansible.builtin.set_fact:
+    unique_teams: "{{ scan_config.scan_targets | map(attribute='team_name') | unique | list }}"
+  delegate_to: localhost
+  run_once: true
+
+- name: Display unique teams
+  ansible.builtin.debug:
+    msg: "Found {{ unique_teams | length }} unique teams: {{ unique_teams | join(', ') }}"
+  delegate_to: localhost
+  run_once: true
+
+# ---------------------------------------------------------------------------
+# Step 3: Build team-based mapping structure
+# ---------------------------------------------------------------------------
+- name: Initialize team mappings
+  ansible.builtin.set_fact:
+    team_mappings: []
+  delegate_to: localhost
+  run_once: true
+
+- name: Build team mapping for each team
+  ansible.builtin.set_fact:
+    team_mappings: >-
+      {{
+        team_mappings + [{
+          'team_name': item,
+          'team_email': (scan_config.scan_targets | selectattr('team_name', 'equalto', item) | map(attribute='team_email') | first),
+          'configured_hosts': (scan_config.scan_targets | selectattr('team_name', 'equalto', item) | list),
+          'configured_hostnames': (scan_config.scan_targets | selectattr('team_name', 'equalto', item) | map(attribute='hostname') | list)
+        }]
+      }}
+  loop: "{{ unique_teams }}"
+  delegate_to: localhost
+  run_once: true
+
+# ---------------------------------------------------------------------------
+# Step 4: Match configured hosts against inventory hosts
+# ---------------------------------------------------------------------------
+- name: Enrich team mappings with inventory matching
+  ansible.builtin.set_fact:
+    team_mappings_enriched: []
+  delegate_to: localhost
+  run_once: true
+
+- name: Match inventory hosts to each team
+  ansible.builtin.set_fact:
+    team_mappings_enriched: >-
+      {{
+        team_mappings_enriched + [{
+          'team_name': item.team_name,
+          'team_email': item.team_email,
+          'configured_hosts': item.configured_hosts,
+          'available_hosts': (item.configured_hosts | selectattr('hostname', 'in', ansible_play_hosts) | list),
+          'available_hostnames': (item.configured_hostnames | intersect(ansible_play_hosts)),
+          'missing_hosts': (item.configured_hostnames | difference(ansible_play_hosts)),
+          'host_count': (item.configured_hosts | selectattr('hostname', 'in', ansible_play_hosts) | list | length)
+        }]
+      }}
+  loop: "{{ team_mappings }}"
+  loop_control:
+    label: "{{ item.team_name }}"
+  delegate_to: localhost
+  run_once: true
+
+# ---------------------------------------------------------------------------
+# Step 5: Set final team mappings variable
+# ---------------------------------------------------------------------------
+- name: Set final team mappings
+  ansible.builtin.set_fact:
+    team_mappings: "{{ team_mappings_enriched }}"
+  delegate_to: localhost
+  run_once: true
+
+# ---------------------------------------------------------------------------
+# Step 6: Identify hosts not in any team configuration (extra inventory hosts)
+# ---------------------------------------------------------------------------
+- name: Get all configured hostnames
+  ansible.builtin.set_fact:
+    all_configured_hostnames: "{{ scan_config.scan_targets | map(attribute='hostname') | list }}"
+  delegate_to: localhost
+  run_once: true
+
+- name: Identify inventory hosts not in configuration
+  ansible.builtin.set_fact:
+    unconfigured_inventory_hosts: "{{ ansible_play_hosts | difference(all_configured_hostnames) }}"
+  delegate_to: localhost
+  run_once: true
+
+# ---------------------------------------------------------------------------
+# Step 7: Create per-host fact for current host (for use in subsequent roles)
+# ---------------------------------------------------------------------------
+- name: Check if current host is configured
+  ansible.builtin.set_fact:
+    host_is_configured: "{{ inventory_hostname in all_configured_hostnames }}"
+
+- name: Set host configuration fact (for configured hosts)
+  ansible.builtin.set_fact:
+    host_config: >-
+      {{
+        scan_config.scan_targets | selectattr('hostname', 'equalto', inventory_hostname) | first | default({})
+      }}
+  when: host_is_configured | bool
+
+- name: Set empty host configuration (for unconfigured hosts)
+  ansible.builtin.set_fact:
+    host_config:
+      hostname: "{{ inventory_hostname }}"
+      automation_user: null
+      team_name: null
+      team_email: null
+      scan_paths: []
+      is_configured: false
+  when: not (host_is_configured | bool)
+
+- name: Add is_configured flag to host_config
+  ansible.builtin.set_fact:
+    host_config: "{{ host_config | combine({'is_configured': host_is_configured}) }}"
+
+# ---------------------------------------------------------------------------
+# Step 8: Display Team Mapping Summary
+# ---------------------------------------------------------------------------
+- name: Display team mapping summary
+  ansible.builtin.debug:
+    msg: |
+      ╔══════════════════════════════════════════════════════════════════════════╗
+      ║                        TEAM MAPPING SUMMARY                              ║
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║  Total Teams: {{ unique_teams | length }}
+      ║  Total Inventory Hosts: {{ ansible_play_hosts | length }}
+      ║  Configured Hosts: {{ all_configured_hostnames | length }}
+      ║  Unconfigured Inventory Hosts: {{ unconfigured_inventory_hosts | length }}
+      ╚══════════════════════════════════════════════════════════════════════════╝
+  delegate_to: localhost
+  run_once: true
+
+- name: Display per-team breakdown
+  ansible.builtin.debug:
+    msg: |
+      ┌──────────────────────────────────────────────────────────────────────────┐
+      │ TEAM: {{ item.team_name }}
+      │ Email: {{ item.team_email }}
+      ├──────────────────────────────────────────────────────────────────────────┤
+      │ Available Hosts ({{ item.available_hostnames | length }}): {{ item.available_hostnames | join(', ') | default('None') }}
+      │ Missing Hosts ({{ item.missing_hosts | length }}): {{ item.missing_hosts | join(', ') | default('None') }}
+      └──────────────────────────────────────────────────────────────────────────┘
+  loop: "{{ team_mappings }}"
+  loop_control:
+    label: "{{ item.team_name }}"
+  delegate_to: localhost
+  run_once: true
+
+- name: Display unconfigured hosts warning
+  ansible.builtin.debug:
+    msg: |
+      ⚠️  WARNING: The following inventory hosts are NOT in scan configuration:
+          {{ unconfigured_inventory_hosts | join(', ') }}
+          These hosts will be SKIPPED during credential scanning.
+  when: unconfigured_inventory_hosts | length > 0
+  delegate_to: localhost
+  run_once: true

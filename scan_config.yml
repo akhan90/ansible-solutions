@@ -1,0 +1,116 @@
+# =============================================================================
+# Credential Scan Configuration File
+# =============================================================================
+# This configuration file defines the targets for credential scanning.
+# It is read on every execution by Ansible Tower.
+#
+# Structure:
+#   - hostname: Target server hostname (must match Ansible Tower inventory)
+#   - automation_user: User account to switch to (become_user) on target server
+#                      This user is specific to each server/team
+#   - team_name: Name of the team responsible for this server
+#   - team_email: Contact email for notifications/reports
+#   - scan_paths: List of directory paths to scan for hardcoded credentials
+# =============================================================================
+
+scan_targets:
+  # -------------------------------------------------------------------------
+  # Application Team - Production Servers
+  # -------------------------------------------------------------------------
+  - hostname: app-server-01.example.com
+    automation_user: svc_app_auto
+    team_name: Application Team
+    team_email: app-team@example.com
+    scan_paths:
+      - /opt/applications/app1/config
+      - /opt/applications/app1/scripts
+      - /var/lib/app1/data
+
+  - hostname: app-server-02.example.com
+    automation_user: svc_app_auto
+    team_name: Application Team
+    team_email: app-team@example.com
+    scan_paths:
+      - /opt/applications/app2/config
+      - /opt/applications/app2/scripts
+      - /home/appuser/scripts
+
+  # -------------------------------------------------------------------------
+  # DevOps Team - Infrastructure Servers
+  # -------------------------------------------------------------------------
+  - hostname: infra-server-01.example.com
+    automation_user: svc_devops
+    team_name: DevOps Team
+    team_email: devops-team@example.com
+    scan_paths:
+      - /opt/scripts
+      - /opt/automation
+      - /etc/ansible
+      - /home/devops/playbooks
+
+  - hostname: infra-server-02.example.com
+    automation_user: svc_jenkins_auto
+    team_name: DevOps Team
+    team_email: devops-team@example.com
+    scan_paths:
+      - /opt/jenkins/scripts
+      - /opt/cicd/pipelines
+      - /var/lib/jenkins/workspace
+
+  # -------------------------------------------------------------------------
+  # Database Team - Database Servers
+  # -------------------------------------------------------------------------
+  - hostname: db-server-01.example.com
+    automation_user: svc_dba_auto
+    team_name: Database Team
+    team_email: dba-team@example.com
+    scan_paths:
+      - /opt/oracle/scripts
+      - /home/oracle/admin
+      - /opt/backups/scripts
+
+  # -------------------------------------------------------------------------
+  # Security Team - Security Infrastructure
+  # -------------------------------------------------------------------------
+  - hostname: security-server-01.example.com
+    automation_user: svc_security
+    team_name: Security Team
+    team_email: security-team@example.com
+    scan_paths:
+      - /opt/security/tools
+      - /opt/security/scripts
+      - /var/log/security/reports
+
+# =============================================================================
+# Global Settings
+# =============================================================================
+global_settings:
+  # File extensions to scan
+  file_extensions:
+    - "*.py"
+    - "*.sh"
+    - "*.yml"
+    - "*.yaml"
+    - "*.json"
+    - "*.xml"
+    - "*.properties"
+    - "*.conf"
+    - "*.config"
+    - "*.ini"
+    - "*.env"
+  
+  # Patterns to exclude from scanning
+  exclude_patterns:
+    - "*.log"
+    - "*.bak"
+    - "*.tmp"
+    - "__pycache__"
+    - ".git"
+    - "node_modules"
+  
+  # Maximum file size to scan (in KB)
+  max_file_size_kb: 1024
+  
+  # Enable/disable recursive directory scanning
+  recursive_scan: true
+

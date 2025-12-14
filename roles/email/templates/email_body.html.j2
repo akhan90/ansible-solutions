@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .header { background: #1e40af; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+        .content { background: #f8fafc; padding: 20px; border: 1px solid #e2e8f0; }
+        .summary-box { background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #e2e8f0; }
+        .stat { display: inline-block; margin-right: 30px; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #1e40af; }
+        .stat-label { font-size: 12px; color: #64748b; text-transform: uppercase; }
+        .alert { background: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; margin: 15px 0; }
+        .success { background: #ecfdf5; border-left: 4px solid #059669; padding: 15px; margin: 15px 0; }
+        .footer { padding: 15px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f1f5f9; font-weight: 600; }
+        .severity-critical { color: #dc2626; font-weight: bold; }
+        .severity-high { color: #ea580c; font-weight: bold; }
+        .severity-medium { color: #ca8a04; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 style="margin: 0;">🔐 Credential Scan Report</h1>
+        <p style="margin: 5px 0 0; opacity: 0.9;">Team: {{ email_team_name }} | Date: {{ ansible_date_time.date }}</p>
+    </div>
+    
+    <div class="content">
+        {% if email_report_summary.total_findings | int > 0 %}
+        <div class="alert">
+            <strong>⚠️ Attention Required:</strong> Hardcoded credentials have been detected in your team's servers.
+            Please review the attached reports and remediate the findings.
+        </div>
+        {% else %}
+        <div class="success">
+            <strong>✅ All Clear:</strong> No hardcoded credentials were found in your team's servers.
+        </div>
+        {% endif %}
+        
+        <div class="summary-box">
+            <h3 style="margin-top: 0;">Scan Summary</h3>
+            <div class="stat">
+                <div class="stat-value">{{ email_report_summary.total_servers }}</div>
+                <div class="stat-label">Servers Scanned</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ email_report_summary.total_files_scanned }}</div>
+                <div class="stat-label">Files Scanned</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" style="color: {% if email_report_summary.total_findings | int > 0 %}#dc2626{% else %}#059669{% endif %};">
+                    {{ email_report_summary.total_findings }}
+                </div>
+                <div class="stat-label">Total Findings</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" style="color: {% if email_report_summary.total_files_with_findings | int > 0 %}#ea580c{% else %}#059669{% endif %};">
+                    {{ email_report_summary.total_files_with_findings }}
+                </div>
+                <div class="stat-label">Files with Issues</div>
+            </div>
+        </div>
+        
+        {% if email_report_summary.total_findings | int > 0 %}
+        <div class="summary-box">
+            <h3 style="margin-top: 0;">Findings by Severity</h3>
+            <table>
+                <tr>
+                    <th>Severity</th>
+                    <th>Count</th>
+                </tr>
+                <tr>
+                    <td class="severity-critical">CRITICAL</td>
+                    <td>{{ email_report_summary.severity_counts.CRITICAL | default(0) }}</td>
+                </tr>
+                <tr>
+                    <td class="severity-high">HIGH</td>
+                    <td>{{ email_report_summary.severity_counts.HIGH | default(0) }}</td>
+                </tr>
+                <tr>
+                    <td class="severity-medium">MEDIUM</td>
+                    <td>{{ email_report_summary.severity_counts.MEDIUM | default(0) }}</td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="summary-box">
+            <h3 style="margin-top: 0;">Types of Hardcoded Information Found</h3>
+            <p>{{ email_report_summary.all_patterns_found | join(', ') }}</p>
+        </div>
+        {% endif %}
+        
+        <div class="summary-box">
+            <h3 style="margin-top: 0;">📎 Attached Reports</h3>
+            <ul>
+                <li><strong>HTML Report:</strong> Interactive report with detailed findings (open in browser)</li>
+                <li><strong>CSV Report:</strong> Data export for tracking and analysis</li>
+            </ul>
+        </div>
+        
+        <p style="margin-top: 20px;">
+            <strong>Next Steps:</strong>
+        </p>
+        <ol>
+            <li>Review the attached HTML report for detailed findings</li>
+            <li>Identify and remediate hardcoded credentials</li>
+            <li>Use secrets management solutions (Vault, AWS Secrets Manager, etc.)</li>
+            <li>Re-run the scan after remediation</li>
+        </ol>
+    </div>
+    
+    <div class="footer">
+        <p>This is an automated email from the Credential Scan System.</p>
+        <p>Generated: {{ ansible_date_time.iso8601 }} | Ansible Tower Automation</p>
+    </div>
+</body>
+</html>
+

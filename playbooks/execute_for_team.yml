@@ -1,0 +1,313 @@
+# =============================================================================
+# Credential Scan Playbook - Execute for Specific Team
+# =============================================================================
+# This playbook executes credential scanning for a specific team.
+#
+# Trigger Variables (from Ansible Tower):
+#   - execute_for_team: true (must be set)
+#   - team_name: Name of the team to scan (must match scan_config.yml)
+#
+# Optional Variables:
+#   - smtp_host: SMTP server for email (if not set, uses mailx)
+#   - smtp_port: SMTP port (default: 25)
+#   - smtp_username: SMTP auth username
+#   - smtp_password: SMTP auth password
+#
+# Flow:
+#   1. Validate trigger variables
+#   2. Read scan_config.yml
+#   3. Map hosts for the specified team
+#   4. Execute scan on all team servers (parallel)
+#   5. Collect scan results
+#   6. Generate consolidated report
+#   7. Send email to team
+#   8. Exit
+# =============================================================================
+
+---
+# ===========================================================================
+# PLAY 1: Initialize and Validate (runs on localhost)
+# ===========================================================================
+- name: "PLAY 1: Initialize and Validate Configuration"
+  hosts: localhost
+  gather_facts: true
+  connection: local
+
+  vars:
+    scan_config_file: "{{ playbook_dir }}/../scan_config.yml"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Step 1.1: Validate trigger variables
+    # -------------------------------------------------------------------------
+    - name: Validate execute_for_team is set
+      ansible.builtin.assert:
+        that:
+          - execute_for_team is defined
+          - execute_for_team | bool
+        fail_msg: "Variable 'execute_for_team' must be set to true"
+        success_msg: "execute_for_team is set to true"
+
+    - name: Validate team_name is provided
+      ansible.builtin.assert:
+        that:
+          - team_name is defined
+          - team_name | length > 0
+        fail_msg: "Variable 'team_name' must be provided"
+        success_msg: "team_name is set to: {{ team_name }}"
+
+    - name: Display execution parameters
+      ansible.builtin.debug:
+        msg: |
+          ╔══════════════════════════════════════════════════════════════════════════╗
+          ║           CREDENTIAL SCAN - TEAM EXECUTION                               ║
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ Mode: Single Team Execution
+          ║ Team: {{ team_name }}
+          ║ Timestamp: {{ ansible_date_time.iso8601 }}
+          ╚══════════════════════════════════════════════════════════════════════════╝
+
+    # -------------------------------------------------------------------------
+    # Step 1.2: Load scan configuration
+    # -------------------------------------------------------------------------
+    - name: Load scan configuration file
+      ansible.builtin.include_vars:
+        file: "{{ scan_config_file }}"
+        name: scan_config
+
+    - name: Display loaded configuration
+      ansible.builtin.debug:
+        msg: "Loaded {{ scan_config.scan_targets | length }} scan targets from configuration"
+
+    # -------------------------------------------------------------------------
+    # Step 1.3: Validate team exists in configuration
+    # -------------------------------------------------------------------------
+    - name: Get unique teams from configuration
+      ansible.builtin.set_fact:
+        available_teams: "{{ scan_config.scan_targets | map(attribute='team_name') | unique | list }}"
+
+    - name: Validate team exists in configuration
+      ansible.builtin.assert:
+        that:
+          - team_name in available_teams
+        fail_msg: |
+          Team '{{ team_name }}' not found in scan_config.yml
+          Available teams: {{ available_teams | join(', ') }}
+        success_msg: "Team '{{ team_name }}' found in configuration"
+
+    # -------------------------------------------------------------------------
+    # Step 1.4: Extract team configuration
+    # -------------------------------------------------------------------------
+    - name: Extract team hosts from configuration
+      ansible.builtin.set_fact:
+        team_hosts: "{{ scan_config.scan_targets | selectattr('team_name', 'equalto', team_name) | list }}"
+
+    - name: Extract team email
+      ansible.builtin.set_fact:
+        team_email: "{{ team_hosts | map(attribute='team_email') | first }}"
+
+    - name: Extract team hostnames
+      ansible.builtin.set_fact:
+        team_hostnames: "{{ team_hosts | map(attribute='hostname') | list }}"
+
+    - name: Display team configuration
+      ansible.builtin.debug:
+        msg: |
+          ┌──────────────────────────────────────────────────────────────────────────┐
+          │ TEAM CONFIGURATION                                                       │
+          ├──────────────────────────────────────────────────────────────────────────┤
+          │ Team: {{ team_name }}
+          │ Email: {{ team_email }}
+          │ Configured Hosts: {{ team_hostnames | length }}
+          │ Hosts: {{ team_hostnames | join(', ') }}
+          └──────────────────────────────────────────────────────────────────────────┘
+
+    # -------------------------------------------------------------------------
+    # Step 1.5: Set facts for subsequent plays
+    # -------------------------------------------------------------------------
+    - name: Set global facts for subsequent plays
+      ansible.builtin.set_fact:
+        target_team_name: "{{ team_name }}"
+        target_team_email: "{{ team_email }}"
+        target_team_hosts: "{{ team_hosts }}"
+        target_team_hostnames: "{{ team_hostnames }}"
+        global_settings: "{{ scan_config.global_settings | default({}) }}"
+        cacheable: true
+
+# ===========================================================================
+# PLAY 2: Execute Scan on Team Servers (parallel execution)
+# ===========================================================================
+- name: "PLAY 2: Execute Credential Scan on Team Servers"
+  hosts: "{{ hostvars['localhost']['target_team_hostnames'] | join(',') }}"
+  gather_facts: true
+  strategy: free  # Parallel execution
+
+  vars:
+    # Get host-specific configuration from team_hosts
+    current_host_config: >-
+      {{ hostvars['localhost']['target_team_hosts'] | 
+         selectattr('hostname', 'equalto', inventory_hostname) | 
+         first | default({}) }}
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Step 2.1: Validate host is in team configuration
+    # -------------------------------------------------------------------------
+    - name: Check if host is configured for this team
+      ansible.builtin.assert:
+        that:
+          - current_host_config | length > 0
+        fail_msg: "Host {{ inventory_hostname }} not found in team configuration"
+        success_msg: "Host {{ inventory_hostname }} is configured for scanning"
+
+    - name: Display host scan configuration
+      ansible.builtin.debug:
+        msg: |
+          ┌──────────────────────────────────────────────────────────────────────────┐
+          │ HOST SCAN CONFIGURATION                                                  │
+          ├──────────────────────────────────────────────────────────────────────────┤
+          │ Hostname: {{ current_host_config.hostname }}
+          │ Automation User: {{ current_host_config.automation_user }}
+          │ Scan Paths: {{ current_host_config.scan_paths | join(', ') }}
+          └──────────────────────────────────────────────────────────────────────────┘
+
+    # -------------------------------------------------------------------------
+    # Step 2.2: Execute scan role
+    # -------------------------------------------------------------------------
+    - name: Execute credential scan on host
+      ansible.builtin.include_role:
+        name: scan
+      vars:
+        scan_hostname: "{{ current_host_config.hostname }}"
+        scan_automation_user: "{{ current_host_config.automation_user }}"
+        scan_paths: "{{ current_host_config.scan_paths }}"
+        scan_global_settings: "{{ hostvars['localhost']['global_settings'] }}"
+
+    # -------------------------------------------------------------------------
+    # Step 2.3: Store scan result for collection
+    # -------------------------------------------------------------------------
+    - name: Store scan result as host fact
+      ansible.builtin.set_fact:
+        host_scan_result: "{{ server_scan_result }}"
+        cacheable: true
+
+# ===========================================================================
+# PLAY 3: Collect Results and Generate Report (runs on localhost)
+# ===========================================================================
+- name: "PLAY 3: Collect Results and Generate Team Report"
+  hosts: localhost
+  gather_facts: true
+  connection: local
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Step 3.1: Collect scan results from all team hosts
+    # -------------------------------------------------------------------------
+    - name: Initialize scan results collection
+      ansible.builtin.set_fact:
+        team_scan_results: []
+
+    - name: Collect scan results from all team hosts
+      ansible.builtin.set_fact:
+        team_scan_results: "{{ team_scan_results + [hostvars[item]['host_scan_result']] }}"
+      loop: "{{ target_team_hostnames }}"
+      when: hostvars[item]['host_scan_result'] is defined
+
+    - name: Display collected results count
+      ansible.builtin.debug:
+        msg: |
+          ┌──────────────────────────────────────────────────────────────────────────┐
+          │ SCAN RESULTS COLLECTION                                                  │
+          ├──────────────────────────────────────────────────────────────────────────┤
+          │ Team: {{ target_team_name }}
+          │ Hosts Configured: {{ target_team_hostnames | length }}
+          │ Results Collected: {{ team_scan_results | length }}
+          └──────────────────────────────────────────────────────────────────────────┘
+
+    # -------------------------------------------------------------------------
+    # Step 3.2: Check for hosts that failed to report
+    # -------------------------------------------------------------------------
+    - name: Identify hosts without scan results
+      ansible.builtin.set_fact:
+        hosts_without_results: "{{ target_team_hostnames | difference(team_scan_results | map(attribute='server_name') | list) }}"
+
+    - name: Warn about hosts without results
+      ansible.builtin.debug:
+        msg: "⚠️ WARNING: No scan results from hosts: {{ hosts_without_results | join(', ') }}"
+      when: hosts_without_results | length > 0
+
+    # -------------------------------------------------------------------------
+    # Step 3.3: Generate consolidated report
+    # -------------------------------------------------------------------------
+    - name: Generate team report
+      ansible.builtin.include_role:
+        name: report
+      vars:
+        report_team_name: "{{ target_team_name }}"
+        report_team_email: "{{ target_team_email }}"
+        report_scan_results: "{{ team_scan_results }}"
+
+    - name: Store report output
+      ansible.builtin.set_fact:
+        final_report_output: "{{ team_report_output }}"
+
+    # -------------------------------------------------------------------------
+    # Step 3.4: Send email notification
+    # -------------------------------------------------------------------------
+    - name: Send email to team
+      ansible.builtin.include_role:
+        name: email
+      vars:
+        email_to: "{{ target_team_email }}"
+        email_team_name: "{{ target_team_name }}"
+        email_report_html_path: "{{ final_report_output.html_report_path }}"
+        email_report_csv_path: "{{ final_report_output.csv_report_path }}"
+        email_report_summary: "{{ final_report_output.summary }}"
+        # SMTP settings passed through from Tower (if defined)
+        smtp_host: "{{ smtp_host | default(omit) }}"
+        smtp_port: "{{ smtp_port | default(25) }}"
+        smtp_username: "{{ smtp_username | default(omit) }}"
+        smtp_password: "{{ smtp_password | default(omit) }}"
+        smtp_use_tls: "{{ smtp_use_tls | default(false) }}"
+
+    # -------------------------------------------------------------------------
+    # Step 3.5: Final summary
+    # -------------------------------------------------------------------------
+    - name: Display final execution summary
+      ansible.builtin.debug:
+        msg: |
+          ╔══════════════════════════════════════════════════════════════════════════╗
+          ║                    EXECUTION COMPLETE                                    ║
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ Team: {{ target_team_name }}
+          ║ Email: {{ target_team_email }}
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ SCAN SUMMARY:
+          ║   Hosts Scanned: {{ team_scan_results | length }}
+          ║   Total Files Scanned: {{ final_report_output.summary.total_files_scanned }}
+          ║   Total Findings: {{ final_report_output.summary.total_findings }}
+          ║   Status: {{ 'FINDINGS DETECTED ⚠️' if final_report_output.summary.total_findings | int > 0 else 'ALL CLEAR ✅' }}
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ REPORTS GENERATED:
+          ║   HTML: {{ final_report_output.html_report_path }}
+          ║   CSV: {{ final_report_output.csv_report_path }}
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ EMAIL STATUS: {{ email_result.status }}
+          ╚══════════════════════════════════════════════════════════════════════════╝
+
+    # -------------------------------------------------------------------------
+    # Step 3.6: Set final exit status
+    # -------------------------------------------------------------------------
+    - name: Set final execution result
+      ansible.builtin.set_fact:
+        execution_result:
+          status: "completed"
+          team: "{{ target_team_name }}"
+          hosts_scanned: "{{ team_scan_results | length }}"
+          total_findings: "{{ final_report_output.summary.total_findings }}"
+          reports:
+            html: "{{ final_report_output.html_report_path }}"
+            csv: "{{ final_report_output.csv_report_path }}"
+          email_sent: "{{ email_result.sent }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+

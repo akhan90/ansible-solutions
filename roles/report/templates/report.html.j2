@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credential Scan Report - {{ report_team_name }}</title>
+    <style>
+        :root {
+            --color-critical: #dc2626;
+            --color-high: #ea580c;
+            --color-medium: #ca8a04;
+            --color-low: #16a34a;
+            --color-clean: #059669;
+            --color-bg: #f8fafc;
+            --color-card: #ffffff;
+            --color-border: #e2e8f0;
+            --color-text: #1e293b;
+            --color-text-muted: #64748b;
+            --color-primary: #3b82f6;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.6;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .header-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 24px;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .header-meta span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        /* Summary Cards */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .summary-card {
+            background: var(--color-card);
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid var(--color-border);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        
+        .summary-card-label {
+            font-size: 13px;
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        
+        .summary-card-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--color-text);
+        }
+        
+        .summary-card-value.critical { color: var(--color-critical); }
+        .summary-card-value.high { color: var(--color-high); }
+        .summary-card-value.medium { color: var(--color-medium); }
+        .summary-card-value.clean { color: var(--color-clean); }
+        
+        /* Severity Summary */
+        .severity-section {
+            background: var(--color-card);
+            border-radius: 10px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid var(--color-border);
+        }
+        
+        .severity-section h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: var(--color-text);
+        }
+        
+        .severity-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .severity-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .severity-label {
+            width: 80px;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .severity-label.critical { color: var(--color-critical); }
+        .severity-label.high { color: var(--color-high); }
+        .severity-label.medium { color: var(--color-medium); }
+        
+        .severity-track {
+            flex: 1;
+            height: 24px;
+            background: #f1f5f9;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .severity-fill {
+            height: 100%;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+            min-width: 40px;
+        }
+        
+        .severity-fill.critical { background: var(--color-critical); }
+        .severity-fill.high { background: var(--color-high); }
+        .severity-fill.medium { background: var(--color-medium); }
+        
+        /* Patterns Found */
+        .patterns-section {
+            background: var(--color-card);
+            border-radius: 10px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid var(--color-border);
+        }
+        
+        .patterns-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .pattern-tag {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        /* Server Section */
+        .servers-section {
+            margin-bottom: 24px;
+        }
+        
+        .servers-section h2 {
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: var(--color-text);
+        }
+        
+        /* Server Card */
+        .server-card {
+            background: var(--color-card);
+            border-radius: 10px;
+            margin-bottom: 12px;
+            border: 1px solid var(--color-border);
+            overflow: hidden;
+        }
+        
+        .server-header {
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.2s;
+        }
+        
+        .server-header:hover {
+            background: #f8fafc;
+        }
+        
+        .server-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .server-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--color-text);
+        }
+        
+        .server-status {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .server-status.findings { background: #fef2f2; color: var(--color-critical); }
+        .server-status.clean { background: #ecfdf5; color: var(--color-clean); }
+        
+        .server-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+            color: var(--color-text-muted);
+        }
+        
+        .toggle-icon {
+            font-size: 20px;
+            color: var(--color-text-muted);
+            transition: transform 0.3s;
+        }
+        
+        .server-card.expanded .toggle-icon {
+            transform: rotate(180deg);
+        }
+        
+        .server-details {
+            display: none;
+            padding: 0 20px 20px;
+            border-top: 1px solid var(--color-border);
+        }
+        
+        .server-card.expanded .server-details {
+            display: block;
+        }
+        
+        /* Findings Table */
+        .findings-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+            font-size: 14px;
+        }
+        
+        .findings-table th {
+            background: #f8fafc;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--color-text-muted);
+            border-bottom: 2px solid var(--color-border);
+        }
+        
+        .findings-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--color-border);
+            vertical-align: top;
+        }
+        
+        .findings-table tr:hover {
+            background: #f8fafc;
+        }
+        
+        .file-path {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            color: var(--color-primary);
+            word-break: break-all;
+        }
+        
+        .finding-type {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .finding-type.critical { background: #fef2f2; color: var(--color-critical); }
+        .finding-type.high { background: #fff7ed; color: var(--color-high); }
+        .finding-type.medium { background: #fefce8; color: var(--color-medium); }
+        
+        .code-snippet {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            background: #f1f5f9;
+            padding: 8px;
+            border-radius: 4px;
+            word-break: break-all;
+            max-width: 400px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        /* No Findings */
+        .no-findings {
+            text-align: center;
+            padding: 40px;
+            color: var(--color-clean);
+        }
+        
+        .no-findings-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+        
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 24px;
+            color: var(--color-text-muted);
+            font-size: 13px;
+        }
+        
+        /* Print Styles */
+        @media print {
+            body { padding: 0; }
+            .server-details { display: block !important; }
+            .toggle-icon { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔐 Credential Scan Report</h1>
+            <div class="header-meta">
+                <span><strong>Team:</strong> {{ report_team_name }}</span>
+                <span><strong>Email:</strong> {{ report_team_email }}</span>
+                <span><strong>Scan Date:</strong> {{ report_scan_date }}</span>
+                <span><strong>Generated:</strong> {{ ansible_date_time.iso8601 }}</span>
+            </div>
+        </div>
+        
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="summary-card-label">Total Servers Scanned</div>
+                <div class="summary-card-value">{{ report_scan_results | length }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">Total Files Scanned</div>
+                <div class="summary-card-value">{{ report_scan_results | map(attribute='file_paths_scanned_count') | map('int') | sum }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">Files with Findings</div>
+                <div class="summary-card-value {% if report_summary.total_files_with_findings > 0 %}critical{% else %}clean{% endif %}">
+                    {{ report_summary.total_files_with_findings }}
+                </div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">Total Findings</div>
+                <div class="summary-card-value {% if report_summary.total_findings > 0 %}high{% else %}clean{% endif %}">
+                    {{ report_summary.total_findings }}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Severity Breakdown -->
+        {% if report_summary.total_findings > 0 %}
+        <div class="severity-section">
+            <h2>📊 Findings by Severity</h2>
+            <div class="severity-bars">
+                <div class="severity-bar">
+                    <span class="severity-label critical">Critical</span>
+                    <div class="severity-track">
+                        {% set critical_pct = (report_summary.severity_counts.CRITICAL / report_summary.total_findings * 100) | int if report_summary.total_findings > 0 else 0 %}
+                        <div class="severity-fill critical" style="width: {{ critical_pct }}%;">{{ report_summary.severity_counts.CRITICAL }}</div>
+                    </div>
+                </div>
+                <div class="severity-bar">
+                    <span class="severity-label high">High</span>
+                    <div class="severity-track">
+                        {% set high_pct = (report_summary.severity_counts.HIGH / report_summary.total_findings * 100) | int if report_summary.total_findings > 0 else 0 %}
+                        <div class="severity-fill high" style="width: {{ high_pct }}%;">{{ report_summary.severity_counts.HIGH }}</div>
+                    </div>
+                </div>
+                <div class="severity-bar">
+                    <span class="severity-label medium">Medium</span>
+                    <div class="severity-track">
+                        {% set medium_pct = (report_summary.severity_counts.MEDIUM / report_summary.total_findings * 100) | int if report_summary.total_findings > 0 else 0 %}
+                        <div class="severity-fill medium" style="width: {{ medium_pct }}%;">{{ report_summary.severity_counts.MEDIUM }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Patterns Found -->
+        <div class="patterns-section">
+            <h2>🔍 Types of Hardcoded Information Found</h2>
+            <div class="patterns-list">
+                {% for pattern in report_summary.all_patterns_found %}
+                <span class="pattern-tag">{{ pattern }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Server Details -->
+        <div class="servers-section">
+            <h2>🖥️ Server Details</h2>
+            
+            {% for server in report_scan_results %}
+            <div class="server-card" id="server-{{ loop.index }}">
+                <div class="server-header" onclick="toggleServer('server-{{ loop.index }}')">
+                    <div class="server-info">
+                        <span class="server-name">{{ server.server_name }}</span>
+                        <span class="server-status {% if server.total_findings | int > 0 %}findings{% else %}clean{% endif %}">
+                            {% if server.total_findings | int > 0 %}{{ server.total_findings }} Findings{% else %}Clean{% endif %}
+                        </span>
+                    </div>
+                    <div class="server-stats">
+                        <span>📁 {{ server.file_paths_scanned_count }} files scanned</span>
+                        <span>📂 {{ server.paths_scanned | length }} paths</span>
+                        <span class="toggle-icon">▼</span>
+                    </div>
+                </div>
+                
+                <div class="server-details">
+                    <p style="margin: 16px 0; color: var(--color-text-muted);">
+                        <strong>Automation User:</strong> {{ server.automation_user }} |
+                        <strong>Scan Time:</strong> {{ server.scan_timestamp }}
+                    </p>
+                    
+                    <p style="margin-bottom: 12px;"><strong>Paths Scanned:</strong></p>
+                    <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--color-text-muted);">
+                        {% for path in server.paths_scanned %}
+                        <li><code>{{ path }}</code></li>
+                        {% endfor %}
+                    </ul>
+                    
+                    {% if server.paths_missing | length > 0 %}
+                    <p style="margin-bottom: 12px; color: var(--color-high);"><strong>⚠️ Missing Paths (skipped):</strong></p>
+                    <ul style="margin-left: 20px; margin-bottom: 16px; color: var(--color-text-muted);">
+                        {% for path in server.paths_missing %}
+                        <li><code>{{ path }}</code></li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    
+                    {% if server.hardcoded_info | length > 0 %}
+                    <table class="findings-table">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Line</th>
+                                <th>Type</th>
+                                <th>Severity</th>
+                                <th>Hardcoded Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for file_info in server.hardcoded_info %}
+                            {% for finding in file_info.findings %}
+                            <tr>
+                                <td class="file-path">{{ file_info.file }}</td>
+                                <td>{{ finding.line }}</td>
+                                <td>{{ finding.type }}</td>
+                                <td>
+                                    <span class="finding-type {{ finding.severity | lower }}">{{ finding.severity }}</span>
+                                </td>
+                                <td><div class="code-snippet">{{ finding.value | e }}</div></td>
+                            </tr>
+                            {% endfor %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="no-findings">
+                        <div class="no-findings-icon">✅</div>
+                        <p>No hardcoded credentials found on this server.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <p>Generated by Credential Scan Automation | Ansible Tower</p>
+            <p>For questions, contact: {{ report_team_email }}</p>
+        </div>
+    </div>
+    
+    <script>
+        function toggleServer(serverId) {
+            const card = document.getElementById(serverId);
+            card.classList.toggle('expanded');
+        }
+        
+        // Expand servers with findings by default
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.server-status.findings').forEach(function(el) {
+                el.closest('.server-card').classList.add('expanded');
+            });
+        });
+    </script>
+</body>
+</html>
+

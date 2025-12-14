@@ -1,0 +1,79 @@
+# =============================================================================
+# Scan Single Host - Included Tasks
+# =============================================================================
+# This task file is included to scan a single host.
+#
+# Expected Variables:
+#   - host_config: Host configuration object containing:
+#       - hostname
+#       - automation_user
+#       - scan_paths
+#       - team_name
+#       - team_email
+#   - global_settings: Global scan settings from scan_config.yml
+#   - current_team_scan_results: List to append results to
+# =============================================================================
+
+---
+- name: "Scanning host: {{ host_config.hostname }}"
+  ansible.builtin.debug:
+    msg: |
+      ┌──────────────────────────────────────────────────────────────────────────┐
+      │ SCANNING HOST: {{ host_config.hostname }}
+      ├──────────────────────────────────────────────────────────────────────────┤
+      │ Automation User: {{ host_config.automation_user }}
+      │ Scan Paths: {{ host_config.scan_paths | join(', ') }}
+      └──────────────────────────────────────────────────────────────────────────┘
+
+# -------------------------------------------------------------------------
+# Execute scan role on the remote host using delegate_to
+# -------------------------------------------------------------------------
+- name: Execute credential scan on host
+  block:
+    - name: Run scan role on remote host
+      ansible.builtin.include_role:
+        name: scan
+        apply:
+          delegate_to: "{{ host_config.hostname }}"
+      vars:
+        scan_hostname: "{{ host_config.hostname }}"
+        scan_automation_user: "{{ host_config.automation_user }}"
+        scan_paths: "{{ host_config.scan_paths }}"
+        scan_global_settings: "{{ global_settings }}"
+
+    - name: Append scan result to team results
+      ansible.builtin.set_fact:
+        current_team_scan_results: "{{ current_team_scan_results + [server_scan_result] }}"
+
+    - name: Display host scan completion
+      ansible.builtin.debug:
+        msg: "✅ Scan complete for {{ host_config.hostname }} - Findings: {{ server_scan_result.total_findings }}"
+
+  rescue:
+    - name: Handle scan failure for host
+      ansible.builtin.debug:
+        msg: "❌ Scan FAILED for {{ host_config.hostname }}: {{ ansible_failed_result.msg | default('Unknown error') }}"
+
+    - name: Create placeholder result for failed host
+      ansible.builtin.set_fact:
+        failed_host_result:
+          server_name: "{{ host_config.hostname }}"
+          automation_user: "{{ host_config.automation_user }}"
+          scan_timestamp: "{{ ansible_date_time.iso8601 }}"
+          scan_status: "failed"
+          error: "{{ ansible_failed_result.msg | default('Scan failed - host unreachable or error occurred') }}"
+          patterns_checked: []
+          patterns_found: []
+          file_paths_scanned: []
+          file_paths_scanned_count: 0
+          paths_requested: "{{ host_config.scan_paths }}"
+          paths_scanned: []
+          paths_missing: "{{ host_config.scan_paths }}"
+          total_findings: 0
+          findings_by_severity: {}
+          hardcoded_info: []
+
+    - name: Append failed result to team results
+      ansible.builtin.set_fact:
+        current_team_scan_results: "{{ current_team_scan_results + [failed_host_result] }}"
+

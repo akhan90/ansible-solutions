@@ -1,0 +1,32 @@
+# =============================================================================
+# Global Variables for All Hosts
+# =============================================================================
+# These variables apply to all hosts in the inventory.
+# In Ansible Tower, these would be set as Inventory Variables or Credentials.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Email Configuration (Optional)
+# ---------------------------------------------------------------------------
+# SMTP settings - uncomment and configure if using SMTP
+# smtp_host: "smtp.example.com"
+# smtp_port: 587
+# smtp_username: "scan-reports@example.com"
+# smtp_password: "{{ vault_smtp_password }}"
+# smtp_use_tls: true
+
+# If SMTP is not configured, mailx will be used
+# email_from: "credential-scan@example.com"
+
+# ---------------------------------------------------------------------------
+# Local Testing Overrides
+# ---------------------------------------------------------------------------
+# For local testing, we override the automation user to current user
+# In production, this would come from scan_config.yml per host
+
+# Override become for local testing
+ansible_become: false
+
+# Use current user as automation user for local testing
+# local_test_mode: true
+

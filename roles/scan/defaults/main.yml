@@ -1,0 +1,56 @@
+# =============================================================================
+# Scan Role - Default Variables
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Required Input Variables (must be provided when calling role)
+# ---------------------------------------------------------------------------
+# scan_hostname: Target hostname to scan
+# scan_automation_user: User to switch to (become_user) for running the scan
+# scan_paths: List of directory paths to scan
+
+# ---------------------------------------------------------------------------
+# Optional Input Variables (from scan_config.yml)
+# ---------------------------------------------------------------------------
+# scan_global_settings: Global settings from scan_config.yml
+#   file_extensions:     List of file extensions to scan (e.g., ["*.py", "*.sh"])
+#   exclude_patterns:    List of patterns to exclude (e.g., ["*.log", ".git"])
+#   max_file_size_kb:    Maximum file size in KB to scan (default: 1024)
+#   recursive_scan:      Enable/disable recursive directory scanning (default: true)
+
+# ---------------------------------------------------------------------------
+# Script Configuration
+# ---------------------------------------------------------------------------
+# Remote path where the scan script will be deployed
+scan_script_remote_path: "/tmp/creds_scan.py"
+
+# Remote path for scan results
+scan_results_remote_path: "/tmp/creds_scan_results_{{ scan_hostname }}.json"
+
+# Remote path for scan configuration (from global_settings)
+scan_config_remote_path: "/tmp/creds_scan_config_{{ scan_hostname }}.json"
+
+# ---------------------------------------------------------------------------
+# Output Variables (populated by role execution)
+# ---------------------------------------------------------------------------
+# server_scan_result:
+#   server_name: hostname
+#   automation_user: user that ran the scan
+#   scan_timestamp: ISO timestamp
+#   scan_config:
+#     file_extensions: [extensions scanned]
+#     exclude_patterns: [patterns excluded]
+#     max_file_size_kb: max size
+#     recursive_scan: true/false
+#   patterns_checked: [list of regex patterns checked]
+#   patterns_found: [patterns that found hardcoded credentials]
+#   file_paths_scanned: [list of scanned file paths]
+#   file_paths_scanned_count: number of files scanned
+#   paths_requested: [original paths from config]
+#   paths_scanned: [paths that existed]
+#   paths_missing: [paths that didn't exist]
+#   total_findings: count
+#   findings_by_severity: {CRITICAL: n, HIGH: n, MEDIUM: n}
+#   hardcoded_info: [{file: path, findings: [{line, type, value, severity}]}]
+#   scan_status: "findings_detected" or "clean"
+# ---------------------------------------------------------------------------

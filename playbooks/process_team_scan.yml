@@ -1,0 +1,124 @@
+# =============================================================================
+# Process Team Scan - Included Tasks
+# =============================================================================
+# This task file is included by execute_all_teams.yml to process each team.
+#
+# Expected Variables:
+#   - current_team: Team mapping object containing:
+#       - team_name
+#       - team_email
+#       - hosts (list of host configs)
+#       - hostnames (list of hostname strings)
+#   - global_settings: Global scan settings from scan_config.yml
+#
+# This file:
+#   1. Scans all hosts for the team (using delegate_to for parallel-like behavior)
+#   2. Collects results
+#   3. Generates report
+#   4. Sends email
+#   5. Appends results to all_team_results
+# =============================================================================
+
+---
+- name: "=============== PROCESSING TEAM: {{ current_team.team_name }} ==============="
+  ansible.builtin.debug:
+    msg: |
+      ╔══════════════════════════════════════════════════════════════════════════╗
+      ║ PROCESSING TEAM: {{ current_team.team_name }}
+      ╠══════════════════════════════════════════════════════════════════════════╣
+      ║ Email: {{ current_team.team_email }}
+      ║ Hosts to Scan: {{ current_team.hostnames | length }}
+      ║ Hosts: {{ current_team.hostnames | join(', ') }}
+      ╚══════════════════════════════════════════════════════════════════════════╝
+
+# -------------------------------------------------------------------------
+# Step 1: Initialize team scan results
+# -------------------------------------------------------------------------
+- name: Initialize team scan results list
+  ansible.builtin.set_fact:
+    current_team_scan_results: []
+
+# -------------------------------------------------------------------------
+# Step 2: Execute scan on each host for this team
+# -------------------------------------------------------------------------
+- name: Execute credential scan on team hosts
+  ansible.builtin.include_tasks:
+    file: scan_single_host.yml
+  loop: "{{ current_team.hosts }}"
+  loop_control:
+    loop_var: host_config
+    label: "{{ host_config.hostname }}"
+
+# -------------------------------------------------------------------------
+# Step 3: Display collected results for this team
+# -------------------------------------------------------------------------
+- name: Display team scan results count
+  ansible.builtin.debug:
+    msg: |
+      ┌──────────────────────────────────────────────────────────────────────────┐
+      │ TEAM SCAN RESULTS: {{ current_team.team_name }}
+      ├──────────────────────────────────────────────────────────────────────────┤
+      │ Hosts Configured: {{ current_team.hostnames | length }}
+      │ Results Collected: {{ current_team_scan_results | length }}
+      └──────────────────────────────────────────────────────────────────────────┘
+
+# -------------------------------------------------------------------------
+# Step 4: Generate team report
+# -------------------------------------------------------------------------
+- name: Generate report for team
+  ansible.builtin.include_role:
+    name: report
+  vars:
+    report_team_name: "{{ current_team.team_name }}"
+    report_team_email: "{{ current_team.team_email }}"
+    report_scan_results: "{{ current_team_scan_results }}"
+
+- name: Store team report output
+  ansible.builtin.set_fact:
+    current_team_report: "{{ team_report_output }}"
+
+# -------------------------------------------------------------------------
+# Step 5: Send email to team
+# -------------------------------------------------------------------------
+- name: Send email to team
+  ansible.builtin.include_role:
+    name: email
+  vars:
+    email_to: "{{ current_team.team_email }}"
+    email_team_name: "{{ current_team.team_name }}"
+    email_report_html_path: "{{ current_team_report.html_report_path }}"
+    email_report_csv_path: "{{ current_team_report.csv_report_path }}"
+    email_report_summary: "{{ current_team_report.summary }}"
+    # SMTP settings passed through from Tower (if defined)
+    smtp_host: "{{ smtp_host | default(omit) }}"
+    smtp_port: "{{ smtp_port | default(25) }}"
+    smtp_username: "{{ smtp_username | default(omit) }}"
+    smtp_password: "{{ smtp_password | default(omit) }}"
+    smtp_use_tls: "{{ smtp_use_tls | default(false) }}"
+
+# -------------------------------------------------------------------------
+# Step 6: Store team result for final summary
+# -------------------------------------------------------------------------
+- name: Store team execution result
+  ansible.builtin.set_fact:
+    current_team_result:
+      team_name: "{{ current_team.team_name }}"
+      team_email: "{{ current_team.team_email }}"
+      hosts_scanned: "{{ current_team_scan_results | length }}"
+      total_findings: "{{ current_team_report.summary.total_findings }}"
+      files_scanned: "{{ current_team_report.summary.total_files_scanned }}"
+      html_report: "{{ current_team_report.html_report_path }}"
+      csv_report: "{{ current_team_report.csv_report_path }}"
+      email_sent: "{{ email_result.sent }}"
+
+- name: Append team result to all_team_results
+  ansible.builtin.set_fact:
+    all_team_results: "{{ all_team_results + [current_team_result] }}"
+
+- name: Display team completion status
+  ansible.builtin.debug:
+    msg: |
+      ✅ TEAM COMPLETE: {{ current_team.team_name }}
+         Hosts: {{ current_team_result.hosts_scanned }} | Findings: {{ current_team_result.total_findings }}
+         Email: {{ 'Sent' if current_team_result.email_sent else 'Failed' }}
+

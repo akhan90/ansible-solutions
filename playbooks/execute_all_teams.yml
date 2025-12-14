@@ -1,0 +1,207 @@
+# =============================================================================
+# Credential Scan Playbook - Execute for All Teams
+# =============================================================================
+# This playbook executes credential scanning for ALL teams in scan_config.yml
+#
+# Trigger Variables (from Ansible Tower):
+#   - scan_all_teams: true (must be set)
+#   - execute_for_team: must NOT be set or be false
+#   - team_name: must NOT be set
+#
+# Optional Variables:
+#   - smtp_host: SMTP server for email (if not set, uses mailx)
+#   - smtp_port: SMTP port (default: 25)
+#   - smtp_username: SMTP auth username
+#   - smtp_password: SMTP auth password
+#
+# Flow:
+#   For EACH team in scan_config.yml:
+#     1. Map hosts for the team
+#     2. Execute scan on all team servers (parallel)
+#     3. Collect scan results
+#     4. Generate team report
+#     5. Send email to team
+#   Then: Generate summary and exit
+# =============================================================================
+
+---
+# ===========================================================================
+# PLAY 1: Initialize and Load Configuration (runs on localhost)
+# ===========================================================================
+- name: "PLAY 1: Initialize and Load Configuration"
+  hosts: localhost
+  gather_facts: true
+  connection: local
+
+  vars:
+    scan_config_file: "{{ playbook_dir }}/../scan_config.yml"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Step 1.1: Validate trigger variables
+    # -------------------------------------------------------------------------
+    - name: Validate scan_all_teams is set
+      ansible.builtin.assert:
+        that:
+          - scan_all_teams is defined
+          - scan_all_teams | bool
+        fail_msg: "Variable 'scan_all_teams' must be set to true"
+        success_msg: "scan_all_teams is set to true"
+
+    - name: Ensure execute_for_team is not set
+      ansible.builtin.assert:
+        that:
+          - execute_for_team is not defined or not (execute_for_team | bool)
+        fail_msg: "Cannot use scan_all_teams with execute_for_team=true. Use execute_for_team.yml playbook instead."
+        success_msg: "execute_for_team is not set (OK)"
+
+    - name: Ensure team_name is not set
+      ansible.builtin.assert:
+        that:
+          - team_name is not defined or team_name | length == 0
+        fail_msg: "Cannot use scan_all_teams with team_name set. Use execute_for_team.yml playbook instead."
+        success_msg: "team_name is not set (OK)"
+
+    - name: Display execution mode
+      ansible.builtin.debug:
+        msg: |
+          ╔══════════════════════════════════════════════════════════════════════════╗
+          ║           CREDENTIAL SCAN - ALL TEAMS EXECUTION                          ║
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ Mode: Scan All Teams
+          ║ Timestamp: {{ ansible_date_time.iso8601 }}
+          ╚══════════════════════════════════════════════════════════════════════════╝
+
+    # -------------------------------------------------------------------------
+    # Step 1.2: Load scan configuration
+    # -------------------------------------------------------------------------
+    - name: Load scan configuration file
+      ansible.builtin.include_vars:
+        file: "{{ scan_config_file }}"
+        name: scan_config
+
+    - name: Display loaded configuration
+      ansible.builtin.debug:
+        msg: "Loaded {{ scan_config.scan_targets | length }} scan targets from configuration"
+
+    # -------------------------------------------------------------------------
+    # Step 1.3: Extract unique teams
+    # -------------------------------------------------------------------------
+    - name: Get unique teams from configuration
+      ansible.builtin.set_fact:
+        all_teams: "{{ scan_config.scan_targets | map(attribute='team_name') | unique | list }}"
+
+    - name: Display teams to process
+      ansible.builtin.debug:
+        msg: |
+          ┌──────────────────────────────────────────────────────────────────────────┐
+          │ TEAMS TO PROCESS                                                         │
+          ├──────────────────────────────────────────────────────────────────────────┤
+          │ Total Teams: {{ all_teams | length }}
+          │ Teams: {{ all_teams | join(', ') }}
+          └──────────────────────────────────────────────────────────────────────────┘
+
+    # -------------------------------------------------------------------------
+    # Step 1.4: Build team mappings
+    # -------------------------------------------------------------------------
+    - name: Build team mappings
+      ansible.builtin.set_fact:
+        team_mappings: >-
+          {{
+            team_mappings | default([]) + [{
+              'team_name': item,
+              'team_email': (scan_config.scan_targets | selectattr('team_name', 'equalto', item) | map(attribute='team_email') | first),
+              'hosts': (scan_config.scan_targets | selectattr('team_name', 'equalto', item) | list),
+              'hostnames': (scan_config.scan_targets | selectattr('team_name', 'equalto', item) | map(attribute='hostname') | list)
+            }]
+          }}
+      loop: "{{ all_teams }}"
+
+    - name: Display team mappings summary
+      ansible.builtin.debug:
+        msg: |
+          Team: {{ item.team_name }}
+          Email: {{ item.team_email }}
+          Hosts: {{ item.hostnames | join(', ') }}
+      loop: "{{ team_mappings }}"
+      loop_control:
+        label: "{{ item.team_name }}"
+
+    # -------------------------------------------------------------------------
+    # Step 1.5: Set global facts for subsequent plays
+    # -------------------------------------------------------------------------
+    - name: Set global facts
+      ansible.builtin.set_fact:
+        global_team_mappings: "{{ team_mappings }}"
+        global_settings: "{{ scan_config.global_settings | default({}) }}"
+        global_scan_config: "{{ scan_config }}"
+        all_team_results: []
+        cacheable: true
+
+# ===========================================================================
+# PLAY 2: Process Each Team (include team processing tasks)
+# ===========================================================================
+- name: "PLAY 2: Process All Teams"
+  hosts: localhost
+  gather_facts: true
+  connection: local
+
+  tasks:
+    - name: Process each team sequentially
+      ansible.builtin.include_tasks:
+        file: process_team_scan.yml
+      loop: "{{ global_team_mappings }}"
+      loop_control:
+        loop_var: current_team
+        label: "{{ current_team.team_name }}"
+
+# ===========================================================================
+# PLAY 3: Final Summary (runs on localhost)
+# ===========================================================================
+- name: "PLAY 3: Final Execution Summary"
+  hosts: localhost
+  gather_facts: true
+  connection: local
+
+  tasks:
+    - name: Calculate overall statistics
+      ansible.builtin.set_fact:
+        overall_stats:
+          total_teams: "{{ global_team_mappings | length }}"
+          total_hosts: "{{ global_team_mappings | map(attribute='hostnames') | flatten | length }}"
+          teams_with_findings: "{{ all_team_results | selectattr('total_findings', 'gt', 0) | list | length }}"
+          total_findings: "{{ all_team_results | map(attribute='total_findings') | map('int') | sum }}"
+
+    - name: Display final execution summary
+      ansible.builtin.debug:
+        msg: |
+          ╔══════════════════════════════════════════════════════════════════════════╗
+          ║                    ALL TEAMS SCAN COMPLETE                               ║
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ OVERALL SUMMARY:
+          ║   Teams Processed: {{ overall_stats.total_teams }}
+          ║   Total Hosts Scanned: {{ overall_stats.total_hosts }}
+          ║   Teams with Findings: {{ overall_stats.teams_with_findings }}
+          ║   Total Findings Across All Teams: {{ overall_stats.total_findings }}
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ PER-TEAM RESULTS:
+          {% for result in all_team_results %}
+          ║   {{ result.team_name }}:
+          ║     - Hosts: {{ result.hosts_scanned }} | Findings: {{ result.total_findings }}
+          ║     - Email: {{ 'Sent ✅' if result.email_sent else 'Failed ❌' }}
+          {% endfor %}
+          ╠══════════════════════════════════════════════════════════════════════════╣
+          ║ Status: {{ 'FINDINGS DETECTED ⚠️' if overall_stats.total_findings | int > 0 else 'ALL TEAMS CLEAN ✅' }}
+          ║ Completed: {{ ansible_date_time.iso8601 }}
+          ╚══════════════════════════════════════════════════════════════════════════╝
+
+    - name: Set final execution result
+      ansible.builtin.set_fact:
+        final_execution_result:
+          status: "completed"
+          mode: "all_teams"
+          teams_processed: "{{ global_team_mappings | length }}"
+          total_findings: "{{ overall_stats.total_findings }}"
+          team_results: "{{ all_team_results }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+

@@ -1,0 +1,57 @@
+# =============================================================================
+# Email Role - Default Variables
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Required Input Variables (must be provided when calling role)
+# ---------------------------------------------------------------------------
+# email_to: Recipient email address (team email)
+# email_team_name: Team name for email subject
+# email_report_html_path: Path to HTML report to attach
+# email_report_csv_path: Path to CSV report to attach
+# email_report_summary: Report summary object from report role
+
+# ---------------------------------------------------------------------------
+# SMTP Configuration (Optional - if provided, SMTP will be used)
+# ---------------------------------------------------------------------------
+# smtp_host: SMTP server hostname
+# smtp_port: SMTP server port (default: 25)
+# smtp_username: SMTP authentication username (optional)
+# smtp_password: SMTP authentication password (optional)
+# smtp_use_tls: Enable TLS (default: false)
+# smtp_use_ssl: Enable SSL (default: false)
+
+# Default SMTP settings
+smtp_port: 25
+smtp_use_tls: false
+smtp_use_ssl: false
+
+# ---------------------------------------------------------------------------
+# Email Configuration
+# ---------------------------------------------------------------------------
+# Sender email address
+email_from: "credential-scan@example.com"
+
+# Email subject prefix
+email_subject_prefix: "[Credential Scan]"
+
+# CC recipients (optional list)
+# email_cc: []
+
+# ---------------------------------------------------------------------------
+# Mailx Configuration (used if SMTP not provided)
+# ---------------------------------------------------------------------------
+# Path to mailx binary
+mailx_path: "/usr/bin/mailx"
+
+# Additional mailx options
+mailx_options: ""
+
+# ---------------------------------------------------------------------------
+# Output Variables (populated by role execution)
+# ---------------------------------------------------------------------------
+# email_sent: true/false
+# email_method: "smtp" or "mailx"
+# email_status: success message or error
+# ---------------------------------------------------------------------------
+
