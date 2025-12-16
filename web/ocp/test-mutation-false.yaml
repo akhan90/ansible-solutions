@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-label-true-annotation-false
+  labels:
+    mutate: "true"
+    version: "1.0"
+    labid: "lab-002"
+  annotations:
+    mutate: "false"
+spec:
+  containers:
+    - name: busybox
+      image: busybox
+      command: ["sh", "-c", "echo MIXED && sleep 36000"]

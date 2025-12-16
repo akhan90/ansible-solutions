@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-mutate-true
+  labels:
+    mutate: "true"
+    version: "1.0"
+    labid: "lab-001"
+  annotations:
+    mutate: "true"
+spec:
+  containers:
+    - name: busybox
+      image: busybox
+      command: ["sh", "-c", "echo MUTATE-TRUE && sleep 36000"]

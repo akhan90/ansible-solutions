@@ -1,0 +1,24 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: pod-mutate-webhook
+webhooks:
+  - name: pod-mutate.webhook.system
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Ignore
+    matchPolicy: Equivalent
+    namespaceSelector: {}
+    objectSelector: {}
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+    clientConfig:
+      service:
+        namespace: webhook-system
+        name: pod-mutate-svc
+        path: "/mutate"
+        port: 443
+      caBundle: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUNwakNDQVk0Q0NRRDZqd2JteUNaT0hqQU5CZ2txaGtpRzl3MEJBUXNGQURBVk1STXdFUVlEVlFRRERBcDMKWldKb2IyOXJMV05oTUI0WERUSTFNVEV3T1RFeE1ESXdNVm9YRFRNMU1URXdOekV4TURJd01Wb3dGVEVUTUJFRwpBMVVFQXd3S2QyVmlhRzl2YXkxallUQ0NBU0l3RFFZSktvWklodmNOQVFFQkJRQURnZ0VQQURDQ0FRb0NnZ0VCCkFOQWV2cExleWh2M0dBZ3FhTWM5QVJPbDVjUE8wNm9lSDBicTdCd3paWjBMUml3ckJreXVaWG9GdGZOeXQ4TFIKY05vcXorcHVnb3pWdHo1RVNsWDg1U2dTRmFIMU1zNWM3Vk9mTTlpSGRneSs3Q1VDb1puaDUzYk9pdWpKSDlqMQprWXo0ZzRxV3dERml2UVN3cThpb2lXc0ZUTjFwOXRRVW9SQ3FxSGdZRVV5KzhPcUZQTTV4ZCtlWi9vYXRVZ3VYCjVqZXYxc3dkSEJRN2w0RTg0RmdLYWVFckJIM05YYkFCbmlHKzE2aXB4Uno3ck11SW1hdHVQNlBGK2FWcGRCajUKM3pnSU4vaTc1OGZGZEtYbWluV1BleUIwSm1nK2pVMDYyNXVMdDdlWllWM3lNeXdjZGRtUWtTY2xMQk5rV2hpTgo4OWNkcEl0MmdwdWJnd2lMcDR0ZytJMENBd0VBQVRBTkJna3Foa2lHOXcwQkFRc0ZBQU9DQVFFQWZVRHA1SEFtCmszdXR0U1F4WC9pYURROUVCQ0REU01XYmZiOUU5UjhCTUUvSC9jZFhQZjBZRmw1TDd2UlJJTVhrTjdmSjl4YlkKUG85OUJwdFJyYzdNSWpZZmJ1bm9xTVBtTWExelYwYkhjcy8xM2ZSOE1PZ2I0MmI1aEg2YVVQN1hCSWh4andIYgpWY3RwSlN5Mm1ESS9qNkREcUYrQnJ3RWhjSU1XVnlqMklaYUlZN3pDTFF3aGVJWTFPdUdGY1poMU1tbEx2bDlxCndhV2JNeHZRc3JyeHl1RkVNb2JyWXEzUjZ1Wi9CbWd0RG42VC9MRGNSQkV2SXdiM0NqZEtteTEyTVo0a3VCcTIKRWpGMndDbWZUVzJ2M2tmUkF1WGMxZnBEUmQ0M1JycHd5bjBxU0cxNDJTckdZRC81c2lwYzZJeXdPQW1sUS9NOAowb05LOGNYekJLMVdzZz09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
